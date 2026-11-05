@@ -1,0 +1,24 @@
+{
+  "name": "lifelink-blood-bank-organ-donor-network",
+  "version": "1.0.0",
+  "description": "LIFE-LINK: Blood Bank and Organ Donor Network Management System - DBMS Capstone Project",
+  "scripts": {
+    "start:backend": "npm start --prefix backend",
+    "start:frontend": "npm run dev --prefix frontend",
+    "db:init": "node backend/scripts/init_db.js",
+    "generate:diagram": "python database/generate_diagram.py",
+    "build:frontend": "npm run build --prefix frontend"
+  },
+  "keywords": [
+    "dbms",
+    "capstone",
+    "mysql",
+    "blood-bank",
+    "organ-donation",
+    "react",
+    "express"
+  ],
+  "author": "DBMS Capstone Project Team",
+  "license": "MIT"
+}
+

@@ -1,0 +1,241 @@
+erDiagram
+    %% =====================================================================
+    %% LIFE-LINK: Blood Bank and Organ Donor Network Management System
+    %% Enhanced Entity-Relationship (EER) Conceptual and Relational Schema
+    %% =====================================================================
+
+    %% ---------------------------------------------------------------------
+    %% 1. SUPERTYPE & SUBTYPES (Overlapping Specialization)
+    %% ---------------------------------------------------------------------
+    PERSON {
+        int person_id PK "Primary Key"
+        varchar first_name "NOT NULL"
+        varchar last_name "NOT NULL"
+        date date_of_birth "NOT NULL"
+        enum gender "MALE, FEMALE, OTHER"
+        varchar phone UK "Unique, NOT NULL"
+        varchar email UK "Unique, NOT NULL"
+        varchar address "NOT NULL"
+        varchar city "NOT NULL"
+        varchar state "NOT NULL"
+        varchar pincode "NOT NULL"
+        enum blood_group "A+, A-, B+, B-, AB+, AB-, O+, O-"
+        datetime created_at
+    }
+
+    DONOR {
+        int donor_id PK "Primary Key"
+        int person_id FK,UK "1:1 with Person (Subtype)"
+        enum donor_type "BLOOD, ORGAN, BOTH"
+        enum blood_group "Derived/Confirmed ABO-Rh"
+        date registration_date "NOT NULL"
+        enum availability_status "AVAILABLE, DEFERRED, INACTIVE"
+        date last_donation_date "Nullable"
+        varchar deferral_reason "Nullable"
+    }
+
+    PATIENT {
+        int patient_id PK "Primary Key"
+        int person_id FK,UK "1:1 with Person (Subtype)"
+        int hospital_id FK "Admitted Hospital"
+        int ward_id FK "Assigned Ward"
+        int attending_doctor_id FK "Attending Doctor (Staff)"
+        date admission_date "NOT NULL"
+        date discharge_date "Nullable, >= admission_date"
+        enum medical_status "CRITICAL, STABLE, RECOVERING, DISCHARGED"
+    }
+
+    STAFF {
+        int staff_id PK "Primary Key"
+        int person_id FK,UK "1:1 with Person (Subtype)"
+        int hospital_id FK "Employing Hospital"
+        int ward_id FK "Assigned Ward"
+        int supervisor_staff_id FK "Self-Reference Supervisor"
+        varchar job_title "NOT NULL"
+        varchar department "NOT NULL"
+        enum system_role "ADMIN, DOCTOR, NURSE, TECH, COORD"
+        date hire_date "NOT NULL"
+    }
+
+    %% ---------------------------------------------------------------------
+    %% 2. HOSPITAL & INFRASTRUCTURE
+    %% ---------------------------------------------------------------------
+    HOSPITAL {
+        int hospital_id PK "Primary Key"
+        varchar hospital_name "NOT NULL"
+        varchar license_number UK "Unique License"
+        varchar city "NOT NULL"
+        varchar state "NOT NULL"
+        varchar contact_phone "NOT NULL"
+        varchar contact_email UK "NOT NULL"
+        varchar emergency_helpline "NOT NULL"
+        int established_year "CHECK valid year"
+    }
+
+    WARD {
+        int ward_id PK "Primary Key"
+        int hospital_id FK "Belongs to Hospital"
+        varchar ward_name "Unique per Hospital"
+        enum ward_type "ICU, EMERGENCY, SURGICAL, GENERAL, etc."
+        int floor_number "NOT NULL"
+        int total_beds "CHECK > 0"
+        int occupied_beds "CHECK <= total_beds"
+    }
+
+    %% ---------------------------------------------------------------------
+    %% 3. DONATION CAMP & AGGREGATION
+    %% ---------------------------------------------------------------------
+    DONATION_CAMP {
+        int camp_id PK "Primary Key"
+        varchar camp_name "NOT NULL"
+        varchar organizer "NOT NULL"
+        int hospital_id FK "Organizing Hospital"
+        varchar location "NOT NULL"
+        datetime start_date "NOT NULL"
+        datetime end_date "NOT NULL"
+        int capacity "CHECK > 0"
+        enum camp_status "SCHEDULED, ACTIVE, COMPLETED"
+    }
+
+    CAMP_DONOR_REGISTRATION {
+        int registration_id PK "Primary Key"
+        int camp_id FK "Junction / Aggregation Component"
+        int donor_id FK "Junction / Aggregation Component"
+        datetime registration_time "NOT NULL"
+        boolean attended "Attended Flag"
+        int units_donated "Units Donated at Camp"
+    }
+
+    %% ---------------------------------------------------------------------
+    %% 4. BLOOD BANK & INVENTORY MANAGEMENT
+    %% ---------------------------------------------------------------------
+    BLOOD_DONATION {
+        int donation_id PK "Primary Key"
+        int donor_id FK "Donating Donor"
+        int donation_camp_id FK "Associated Camp (Nullable)"
+        int hospital_id FK "Collection Hospital"
+        int recorded_by_staff_id FK "Technician/Staff"
+        date donation_date "NOT NULL"
+        int quantity_ml "CHECK 300 to 550 ml"
+        decimal hemoglobin_level "CHECK >= 10.0"
+        enum screening_status "PASSED, FAILED, PENDING"
+    }
+
+    BLOOD_UNIT {
+        int unit_id PK "Primary Key"
+        int donation_id FK "Originating Donation"
+        int donor_id FK "Donor"
+        int hospital_id FK "Storing Hospital"
+        enum blood_group "A+, A-, B+, B-, AB+, AB-, O+, O-"
+        enum component_type "WHOLE_BLOOD, RBC, PLATELETS, PLASMA, CRYO"
+        date donation_date "NOT NULL"
+        date expiry_date "CHECK >= donation_date"
+        enum storage_status "AVAILABLE, RESERVED, ALLOCATED, EXPIRED"
+        varchar storage_location "Vault / Shelf ID"
+    }
+
+    BLOOD_REQUEST {
+        int request_id PK "Primary Key"
+        int patient_id FK "Requesting Patient"
+        int hospital_id FK "Hospital where required"
+        enum blood_group "Target Blood Group"
+        enum component_type "Required Component"
+        int units_required "CHECK > 0"
+        enum urgency_level "CRITICAL, HIGH, MEDIUM, ROUTINE"
+        datetime request_date "NOT NULL"
+        datetime required_by_date "NOT NULL"
+        enum request_status "PENDING, PARTIALLY_FULFILLED, FULFILLED"
+    }
+
+    BLOOD_ALLOCATION {
+        int allocation_id PK "Primary Key"
+        int request_id FK "Fulfilled Request"
+        int unit_id FK,UK "Unique: Unit allocated at most once"
+        int allocated_by_staff_id FK "Authorizing Staff"
+        datetime allocated_date "NOT NULL"
+        enum allocation_status "ALLOCATED, TRANSFUSED, RETURNED"
+    }
+
+    BLOOD_COMPATIBILITY {
+        int compatibility_id PK "Primary Key"
+        enum donor_blood_group "ABO-Rh"
+        enum recipient_blood_group "ABO-Rh"
+        boolean is_compatible "Compatibility Matrix"
+    }
+
+    %% ---------------------------------------------------------------------
+    %% 5. ORGAN DONATION NETWORK
+    %% ---------------------------------------------------------------------
+    ORGAN_DONATION {
+        int organ_donation_id PK "Primary Key"
+        int donor_id FK "Pledging Donor"
+        enum organ_type "KIDNEY, LIVER, HEART, LUNG, PANCREAS, CORNEA"
+        enum donation_status "REGISTERED, PLEDGED, MATCH_PENDING, ALLOCATED"
+        date registration_date "NOT NULL"
+        varchar hla_type "Histocompatibility loci"
+        boolean medical_clearance "Clearance Flag"
+    }
+
+    ORGAN_REQUEST {
+        int organ_request_id PK "Primary Key"
+        int patient_id FK "Recipient Patient"
+        int hospital_id FK "Transplant Center"
+        enum organ_type "Required Organ"
+        enum recipient_blood_group "Blood Group"
+        enum urgency_level "CRITICAL, HIGH, MEDIUM, ROUTINE"
+        date request_date "NOT NULL"
+        enum request_status "WAITING, MATCH_PROPOSED, VERIFIED"
+        int medical_urgency_score "CHECK 1 to 100"
+    }
+
+    ORGAN_MATCH {
+        int match_id PK "Primary Key"
+        int organ_donation_id FK "Candidate Organ"
+        int organ_request_id FK "Target Recipient Request"
+        datetime match_date "Evaluation Timestamp"
+        enum compatibility_status "POTENTIAL_MATCH, HIGH, LOW"
+        enum verification_status "PENDING_VERIFICATION, VERIFIED, REJECTED"
+        decimal match_score "Score 0.00 to 100.00"
+        int verified_by_staff_id FK "Authorizing Medical Officer"
+    }
+
+    %% ---------------------------------------------------------------------
+    %% 6. RELATIONSHIPS & CARDINALITIES
+    %% ---------------------------------------------------------------------
+
+    %% Person Specialization (Overlapping, 1 to 0..1 per subtype)
+    PERSON ||--o| DONOR : "specializes to (0..1)"
+    PERSON ||--o| PATIENT : "specializes to (0..1)"
+    PERSON ||--o| STAFF : "specializes to (0..1)"
+
+    %% Hospital Hierarchy
+    HOSPITAL ||--|{ WARD : "houses (1:N)"
+    HOSPITAL ||--|{ STAFF : "employs (1:N)"
+    HOSPITAL ||--|{ PATIENT : "admits (1:N)"
+    HOSPITAL ||--|{ BLOOD_UNIT : "stores (1:N)"
+    HOSPITAL ||--|{ BLOOD_REQUEST : "originates (1:N)"
+    HOSPITAL ||--|{ DONATION_CAMP : "organizes (1:N)"
+    WARD ||--o{ PATIENT : "beds (1:N)"
+    WARD ||--o{ STAFF : "assigns (1:N)"
+    STAFF ||--o{ STAFF : "supervises (Self-Join 1:N)"
+
+    %% Donation Camp & Aggregation
+    DONATION_CAMP ||--|{ CAMP_DONOR_REGISTRATION : "aggregates (1:N)"
+    DONOR ||--o{ CAMP_DONOR_REGISTRATION : "participates (1:N)"
+    DONATION_CAMP ||--o{ BLOOD_DONATION : "yields (1:N)"
+
+    %% Blood Flow
+    DONOR ||--o{ BLOOD_DONATION : "donates (1:N)"
+    BLOOD_DONATION ||--|{ BLOOD_UNIT : "generates (1:N components)"
+    PATIENT ||--o{ BLOOD_REQUEST : "requests (1:N)"
+    BLOOD_REQUEST ||--o{ BLOOD_ALLOCATION : "fulfilled by (1:N)"
+    BLOOD_UNIT ||--o| BLOOD_ALLOCATION : "allocated in (0..1 / 1:1)"
+    STAFF ||--o{ BLOOD_ALLOCATION : "authorizes (1:N)"
+
+    %% Organ Network
+    DONOR ||--o{ ORGAN_DONATION : "pledges (1:N)"
+    PATIENT ||--o{ ORGAN_REQUEST : "awaits (1:N)"
+    ORGAN_DONATION ||--o{ ORGAN_MATCH : "candidate for (1:N)"
+    ORGAN_REQUEST ||--o{ ORGAN_MATCH : "paired in (1:N)"
+    STAFF ||--o{ ORGAN_MATCH : "verifies (1:N)"
+
