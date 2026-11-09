@@ -24,13 +24,21 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (token) {
-        const meRes = await api.get('/auth/me');
-        if (meRes.data && meRes.data.success) {
-          setUser(meRes.data.user);
-          localStorage.setItem('lifelink_user', JSON.stringify(meRes.data.user));
-          if (meRes.data.isMySQLConnected !== undefined) {
-            setIsMySQLConnected(meRes.data.isMySQLConnected);
+        try {
+          const meRes = await api.get('/auth/me');
+          if (meRes.data && meRes.data.success) {
+            setUser(meRes.data.user);
+            localStorage.setItem('lifelink_user', JSON.stringify(meRes.data.user));
+            if (meRes.data.isMySQLConnected !== undefined) {
+              setIsMySQLConnected(meRes.data.isMySQLConnected);
+            }
           }
+        } catch (authErr) {
+          console.warn('Session expired or invalid, clearing stale credentials.');
+          setUser(null);
+          setToken(null);
+          localStorage.removeItem('lifelink_token');
+          localStorage.removeItem('lifelink_user');
         }
       }
     } catch (err) {
