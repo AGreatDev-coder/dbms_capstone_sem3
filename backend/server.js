@@ -76,11 +76,25 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module) {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log('==================================================');
     console.log(` LIFE-LINK Backend API Server running on port ${PORT}`);
     console.log(` Healthcheck: http://localhost:${PORT}/api/health`);
     console.log('==================================================');
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error('\n==================================================');
+      console.error(` [Server Error]: Port ${PORT} is already in use!`);
+      console.error(' Reason (macOS): Apple AirPlay Receiver uses port 5000.');
+      console.error(' Quick Fix:');
+      console.error('   1. Open Mac System Settings');
+      console.error('   2. Go to General > AirDrop & AirPlay');
+      console.error('   3. Turn OFF "AirPlay Receiver"');
+      console.error('==================================================\n');
+      process.exit(1);
+    }
   });
 }
 
