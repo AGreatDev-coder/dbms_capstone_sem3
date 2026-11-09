@@ -53,6 +53,15 @@ const PatientManagement = () => {
   const fetchPatients = async () => {
     try {
       setLoading(true);
+      if (user?.role === 'PATIENT') {
+        const patientId = user?.patient_id || 1;
+        const res = await api.get(`/patients/${patientId}`);
+        if (res.data && res.data.success) {
+          setPatients([res.data.patient]);
+        }
+        return;
+      }
+
       const params = {};
       if (hospitalFilter) params.hospital_id = hospitalFilter;
       if (statusFilter) params.medical_status = statusFilter;
@@ -255,13 +264,15 @@ const PatientManagement = () => {
                   </td>
                   <td className="py-3 px-4 text-right">
                     <div className="flex items-center justify-end gap-1.5">
-                      <button
-                        onClick={() => handleOpenUpdate(pt)}
-                        title="Update Status / Ward"
-                        className="p-1.5 rounded text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
+                      {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
+                        <button
+                          onClick={() => handleOpenUpdate(pt)}
+                          title="Update Status / Ward"
+                          className="p-1.5 rounded text-slate-500 hover:text-slate-800 hover:bg-slate-100"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={() => navigate('/blood-requests')}
                         title="Create Blood Request"

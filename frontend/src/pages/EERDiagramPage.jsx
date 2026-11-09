@@ -18,9 +18,9 @@ const EERDiagramPage = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <a
-            href="http://localhost:5000/database-artifacts/eer_diagram.png"
+            href="/api/database-artifacts/eer_diagram.png"
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-900 text-white hover:bg-black transition-colors"
@@ -32,40 +32,40 @@ const EERDiagramPage = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 text-xs">
+      <div className="flex flex-wrap items-center gap-1 sm:gap-2 border-b border-slate-200 text-xs">
         <button
           onClick={() => setActiveTab('diagram')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
+          className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 font-bold border-b-2 transition-all ${
             activeTab === 'diagram'
               ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
-          <Network className="w-4 h-4" />
-          <span>High-Resolution Visual Diagram (eer_diagram.png)</span>
+          <Network className="w-4 h-4 shrink-0" />
+          <span>Visual Diagram (eer_diagram.png)</span>
         </button>
 
         <button
           onClick={() => setActiveTab('concepts')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
+          className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 font-bold border-b-2 transition-all ${
             activeTab === 'concepts'
               ? 'border-brand-600 text-brand-600'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
-          <FileText className="w-4 h-4" />
+          <FileText className="w-4 h-4 shrink-0" />
           <span>Schema Documentation & Justification</span>
         </button>
 
         <button
           onClick={() => setActiveTab('mermaid')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
+          className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 font-bold border-b-2 transition-all ${
             activeTab === 'mermaid'
               ? 'border-brand-600 text-brand-600'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
-          <Code className="w-4 h-4" />
+          <Code className="w-4 h-4 shrink-0" />
           <span>Mermaid Source (eer_diagram.mmd)</span>
         </button>
       </div>
@@ -73,23 +73,28 @@ const EERDiagramPage = () => {
       {/* TAB 1: VISUAL EER DIAGRAM */}
       {activeTab === 'diagram' && (
         <div className="space-y-6">
-          <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm overflow-hidden text-center">
-            <img
-              src="http://localhost:5000/database-artifacts/eer_diagram.png"
-              alt="LIFE-LINK EER Diagram"
-              className="w-full h-auto rounded-xl shadow-inner border border-slate-100 max-h-[850px] object-contain mx-auto"
-              onError={(e) => {
-                e.target.onerror = null;
-                e.target.src = '/database-artifacts/eer_diagram.png';
-              }}
-            />
-            <p className="text-[11px] text-slate-400 mt-3 font-mono">
-              Rendered from database/eer_diagram.png | Resolution: 2400 x 1800 px (300 DPI layout)
-            </p>
-          </div>
+          <figure className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm overflow-hidden flex flex-col items-center">
+            <div className="w-full overflow-x-auto flex justify-center bg-slate-50 rounded-xl p-2 border border-slate-100">
+              <img
+                src="/api/database-artifacts/eer_diagram.png"
+                alt="LIFE-LINK Enhanced Entity-Relationship (EER) Architecture Diagram"
+                className="w-full h-auto rounded-lg shadow-sm border border-slate-200 max-h-[850px] object-contain mx-auto transition-all"
+                loading="lazy"
+                onError={(e) => {
+                  if (!e.target.dataset.triedFallback) {
+                    e.target.dataset.triedFallback = 'true';
+                    e.target.src = 'http://localhost:5000/database-artifacts/eer_diagram.png';
+                  }
+                }}
+              />
+            </div>
+            <figcaption className="text-center mt-3 text-xs text-slate-500 font-medium">
+              <span className="font-semibold text-slate-700">Figure 1.1:</span> LIFE-LINK Normalized Relational Schema & Overlapping Specialization Hierarchy (Resolution: 2400 x 1800 px, 300 DPI)
+            </figcaption>
+          </figure>
 
           {/* Core EER Concepts Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
             <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-2">
               <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs uppercase tracking-wider">
                 <Layers className="w-4 h-4" />

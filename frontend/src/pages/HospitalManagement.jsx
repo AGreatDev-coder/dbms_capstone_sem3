@@ -74,14 +74,9 @@ const HospitalManagement = () => {
 
   const fetchStaffHierarchy = async () => {
     try {
-      const res = await api.get('/sql-lab/queries');
-      // Execute self-join query 6
-      const qRes = await api.post('/sql-lab/execute', {
-        queryId: 'q6-joins',
-        sql: 'SELECT subordinate.staff_id AS employee_staff_id, CONCAT(sub_p.first_name, " ", sub_p.last_name) AS employee_name, subordinate.job_title AS employee_title, subordinate.department AS department, h.hospital_name, IFNULL(CONCAT(sup_p.first_name, " ", sup_p.last_name), "Top Hospital Executive / Self-Directed") AS supervisor_name, IFNULL(supervisor.job_title, "N/A") AS supervisor_title FROM Staff subordinate INNER JOIN Person sub_p ON subordinate.person_id = sub_p.person_id INNER JOIN Hospital h ON subordinate.hospital_id = h.hospital_id LEFT JOIN Staff supervisor ON subordinate.supervisor_staff_id = supervisor.staff_id LEFT JOIN Person sup_p ON supervisor.person_id = sup_p.person_id ORDER BY h.hospital_name, subordinate.supervisor_staff_id;',
-      });
-      if (qRes.data && qRes.data.success) {
-        setHierarchy(qRes.data.rows);
+      const res = await api.get('/hospitals/staff-hierarchy');
+      if (res.data && res.data.success) {
+        setHierarchy(res.data.rows);
       }
     } catch (err) {
       console.warn('Hierarchy fetch error:', err);

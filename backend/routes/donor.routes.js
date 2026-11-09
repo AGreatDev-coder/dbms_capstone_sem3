@@ -9,7 +9,7 @@ const db = require('../config/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
 // Get all donors with Person supertype attributes (Authorized Staff / Admin view)
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   try {
     const { blood_group, donor_type, status } = req.query;
 
@@ -84,13 +84,24 @@ router.get('/public-directory', async (req, res) => {
   }
 });
 
-// Get single donor details and complete history
-router.get('/:id', async (req, res) => {
+// Get single donor details and complete history (RBAC protected)
+router.get('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'), async (req, res) => {
   try {
     const donorId = parseInt(req.params.id, 10);
     const donor = db.dbStore.donors.find((d) => d.donor_id === donorId);
     if (!donor) {
       return res.status(404).json({ success: false, message: 'Donor not found.' });
+    }
+
+    // Role check: DONOR can only view their own detailed history
+    if (req.user.role === 'DONOR') {
+      const isOwner = (req.user.donor_id && req.user.donor_id === donorId) || (req.user.person_id && req.user.person_id === donor.person_id);
+      if (!isOwner) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Donors are only authorized to view their own profile records.',
+        });
+      }
     }
 
     const person = db.dbStore.persons.find((p) => p.person_id === donor.person_id);
@@ -230,6 +241,17 @@ router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'),
     const donor = db.dbStore.donors.find((d) => d.donor_id === donorId);
     if (!donor) {
       return res.status(404).json({ success: false, message: 'Donor not found.' });
+    }
+
+    // Role check: DONOR can only update their own profile
+    if (req.user.role === 'DONOR') {
+      const isOwner = (req.user.donor_id && req.user.donor_id === donorId) || (req.user.person_id && req.user.person_id === donor.person_id);
+      if (!isOwner) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Donors are only authorized to update their own profile records.',
+        });
+      }
     }
 
     const { availability_status, deferral_reason, medical_history_notes, phone, email, address, city } = req.body;

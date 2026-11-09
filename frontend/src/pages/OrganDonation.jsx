@@ -216,13 +216,15 @@ const OrganDonation = () => {
             </button>
           )}
 
-          <button
-            onClick={() => setIsPledgeModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Pledge Organ</span>
-          </button>
+          {(user?.role === 'ADMIN' || user?.role === 'STAFF' || user?.role === 'DONOR') && (
+            <button
+              onClick={() => setIsPledgeModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Pledge Organ</span>
+            </button>
+          )}
         </div>
       </div>
 

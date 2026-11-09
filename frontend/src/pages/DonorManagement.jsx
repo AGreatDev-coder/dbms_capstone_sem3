@@ -39,6 +39,12 @@ const DonorManagement = () => {
   });
 
   useEffect(() => {
+    if (user?.role === 'DONOR') {
+      setIsPublicView(true);
+    }
+  }, [user]);
+
+  useEffect(() => {
     if (isPublicView) {
       fetchPublicDirectory();
     } else {
@@ -119,26 +125,28 @@ const DonorManagement = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Query 4 View Toggle */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-            <button
-              onClick={() => setIsPublicView(false)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                !isPublicView ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Full Clinical View
-            </button>
-            <button
-              onClick={() => setIsPublicView(true)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
-                isPublicView ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>vw_public_donor_directory (Query 4)</span>
-            </button>
-          </div>
+          {/* Query 4 View Toggle (Restricted for ADMIN/STAFF) */}
+          {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <button
+                onClick={() => setIsPublicView(false)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  !isPublicView ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Full Clinical View
+              </button>
+              <button
+                onClick={() => setIsPublicView(true)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  isPublicView ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>vw_public_donor_directory (Query 4)</span>
+              </button>
+            </div>
+          )}
 
           <button
             onClick={() => setIsRegisterModalOpen(true)}

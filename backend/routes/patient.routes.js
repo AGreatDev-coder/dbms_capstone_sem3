@@ -8,8 +8,8 @@ const router = express.Router();
 const db = require('../config/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
-// Get all patients
-router.get('/', async (req, res) => {
+// Get all patients (RBAC: Authorized Staff / Admin view)
+router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   try {
     const { hospital_id, medical_status, blood_group } = req.query;
 
@@ -63,13 +63,24 @@ router.get('/', async (req, res) => {
   }
 });
 
-// Get single patient with requests history
-router.get('/:id', async (req, res) => {
+// Get single patient with requests history (RBAC protected)
+router.get('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'PATIENT'), async (req, res) => {
   try {
     const patientId = parseInt(req.params.id, 10);
     const patient = db.dbStore.patients.find((pt) => pt.patient_id === patientId);
     if (!patient) {
       return res.status(404).json({ success: false, message: 'Patient not found.' });
+    }
+
+    // Role check: PATIENT can only view their own patient profile
+    if (req.user.role === 'PATIENT') {
+      const isOwner = (req.user.patient_id && req.user.patient_id === patientId) || (req.user.person_id && req.user.person_id === patient.person_id);
+      if (!isOwner) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Patients are only authorized to view their own medical profile.',
+        });
+      }
     }
 
     const person = db.dbStore.persons.find((p) => p.person_id === patient.person_id);

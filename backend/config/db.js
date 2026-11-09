@@ -537,14 +537,291 @@ function executeInMemoryQuery(sql, params = []) {
       });
   }
 
-  // Default query table responders
+  // 9. Dynamic Parameterized Query & CRUD Engine
+  // AppUser authentication lookup
+  if (cleanSql.includes('AppUser')) {
+    const searchVal = params.length > 0 ? String(params[0]).toLowerCase() : '';
+    const user = dbStore.users.find(
+      (u) => u.username.toLowerCase() === searchVal || u.email.toLowerCase() === searchVal
+    );
+    if (!user) return [];
+    const person = dbStore.persons.find((p) => p.person_id === user.person_id);
+    const donor = dbStore.donors.find((d) => d.person_id === user.person_id);
+    const patient = dbStore.patients.find((pt) => pt.person_id === user.person_id);
+    const staff = dbStore.staff.find((s) => s.person_id === user.person_id);
+    return [
+      {
+        ...user,
+        first_name: person ? person.first_name : user.username,
+        last_name: person ? person.last_name : '',
+        blood_group: person ? person.blood_group : 'O+',
+        donor_id: donor ? donor.donor_id : null,
+        patient_id: patient ? patient.patient_id : null,
+        staff_id: staff ? staff.staff_id : null,
+      },
+    ];
+  }
+
+  // Parameterized INSERT operations
+  if (cleanSql.toUpperCase().startsWith('INSERT INTO')) {
+    const tableMatch = cleanSql.match(/INSERT\s+INTO\s+([a-zA-Z0-9_]+)/i);
+    const tableName = tableMatch ? tableMatch[1].toLowerCase() : '';
+
+    if (tableName === 'hospital') {
+      const newId = dbStore.hospitals.length > 0 ? Math.max(...dbStore.hospitals.map((h) => h.hospital_id)) + 1 : 1;
+      const record = {
+        hospital_id: newId,
+        hospital_name: params[0] || 'Hospital',
+        license_number: params[1] || `LIC-${Date.now()}`,
+        address: params[2] || '',
+        city: params[3] || '',
+        state: params[4] || '',
+        pincode: params[5] || '',
+        contact_phone: params[6] || '',
+        contact_email: params[7] || '',
+        emergency_helpline: params[8] || '',
+        established_year: parseInt(params[9] || 2000, 10),
+        is_active: true,
+        created_at: new Date().toISOString(),
+      };
+      dbStore.hospitals.push(record);
+      return { insertId: newId, affectedRows: 1 };
+    }
+
+    if (tableName === 'ward') {
+      const newId = dbStore.wards.length > 0 ? Math.max(...dbStore.wards.map((w) => w.ward_id)) + 1 : 1;
+      const record = {
+        ward_id: newId,
+        hospital_id: parseInt(params[0], 10),
+        ward_name: params[1] || 'General Ward',
+        ward_type: params[2] || 'GENERAL_MALE',
+        floor_number: parseInt(params[3] || 1, 10),
+        total_beds: parseInt(params[4] || 10, 10),
+        occupied_beds: parseInt(params[5] || 0, 10),
+      };
+      dbStore.wards.push(record);
+      return { insertId: newId, affectedRows: 1 };
+    }
+
+    if (tableName === 'person') {
+      const newId = dbStore.persons.length > 0 ? Math.max(...dbStore.persons.map((p) => p.person_id)) + 1 : 1;
+      const record = {
+        person_id: newId,
+        first_name: params[0] || '',
+        last_name: params[1] || '',
+        date_of_birth: params[2] || '1995-01-01',
+        gender: params[3] || 'OTHER',
+        phone: params[4] || '',
+        email: params[5] || '',
+        address: params[6] || '',
+        city: params[7] || '',
+        state: params[8] || '',
+        pincode: params[9] || '',
+        blood_group: params[10] || 'O+',
+        created_at: new Date().toISOString(),
+      };
+      dbStore.persons.push(record);
+      return { insertId: newId, affectedRows: 1 };
+    }
+
+    if (tableName === 'donor') {
+      const newId = dbStore.donors.length > 0 ? Math.max(...dbStore.donors.map((d) => d.donor_id)) + 1 : 1;
+      const record = {
+        donor_id: newId,
+        person_id: parseInt(params[0], 10),
+        donor_type: params[1] || 'BLOOD',
+        blood_group: params[2] || 'O+',
+        registration_date: new Date().toISOString().split('T')[0],
+        availability_status: params[3] || 'AVAILABLE',
+        last_donation_date: null,
+        deferral_reason: null,
+        medical_history_notes: params[4] || '',
+      };
+      dbStore.donors.push(record);
+      return { insertId: newId, affectedRows: 1 };
+    }
+
+    if (tableName === 'patient') {
+      const newId = dbStore.patients.length > 0 ? Math.max(...dbStore.patients.map((p) => p.patient_id)) + 1 : 1;
+      const record = {
+        patient_id: newId,
+        person_id: parseInt(params[0], 10),
+        hospital_id: parseInt(params[1], 10),
+        ward_id: params[2] ? parseInt(params[2], 10) : null,
+        attending_doctor_id: params[3] ? parseInt(params[3], 10) : null,
+        admission_date: new Date().toISOString().split('T')[0],
+        discharge_date: null,
+        medical_status: params[4] || 'STABLE',
+        medical_notes: params[5] || '',
+      };
+      dbStore.patients.push(record);
+      return { insertId: newId, affectedRows: 1 };
+    }
+
+    if (tableName === 'bloodrequest') {
+      const newId = dbStore.bloodRequests.length > 0 ? Math.max(...dbStore.bloodRequests.map((r) => r.request_id)) + 1 : 1;
+      const record = {
+        request_id: newId,
+        patient_id: parseInt(params[0], 10),
+        hospital_id: parseInt(params[1], 10),
+        blood_group: params[2],
+        component_type: params[3] || 'WHOLE_BLOOD',
+        units_required: parseInt(params[4] || 1, 10),
+        urgency_level: params[5] || 'MEDIUM',
+        request_date: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        required_by_date: params[6] || new Date().toISOString().replace('T', ' ').substring(0, 19),
+        request_status: 'PENDING',
+        clinical_indication: params[7] || '',
+      };
+      dbStore.bloodRequests.push(record);
+      return { insertId: newId, affectedRows: 1 };
+    }
+
+    if (tableName === 'blooddonation') {
+      const newId = dbStore.donations.length > 0 ? Math.max(...dbStore.donations.map((d) => d.donation_id)) + 1 : 1;
+      const record = {
+        donation_id: newId,
+        donor_id: parseInt(params[0], 10),
+        donation_camp_id: params[1] ? parseInt(params[1], 10) : null,
+        hospital_id: parseInt(params[2], 10),
+        recorded_by_staff_id: parseInt(params[3] || 7, 10),
+        donation_date: new Date().toISOString().split('T')[0],
+        quantity_ml: parseInt(params[4] || 450, 10),
+        hemoglobin_level: parseFloat(params[5] || 13.0),
+        screening_status: params[6] || 'PASSED',
+        remarks: params[7] || '',
+      };
+      dbStore.donations.push(record);
+      return { insertId: newId, affectedRows: 1 };
+    }
+
+    if (tableName === 'organdonation') {
+      const newId = dbStore.organDonations.length > 0 ? Math.max(...dbStore.organDonations.map((o) => o.organ_donation_id)) + 1 : 1;
+      const record = {
+        organ_donation_id: newId,
+        donor_id: parseInt(params[0], 10),
+        organ_type: params[1],
+        donation_status: 'PLEDGED',
+        registration_date: new Date().toISOString().split('T')[0],
+        hla_type: params[2] || 'Standard Panel',
+        medical_clearance: true,
+        clinical_notes: params[3] || '',
+      };
+      dbStore.organDonations.push(record);
+      return { insertId: newId, affectedRows: 1 };
+    }
+
+    if (tableName === 'organrequest') {
+      const newId = dbStore.organRequests.length > 0 ? Math.max(...dbStore.organRequests.map((o) => o.organ_request_id)) + 1 : 1;
+      const record = {
+        organ_request_id: newId,
+        patient_id: parseInt(params[0], 10),
+        hospital_id: parseInt(params[1], 10),
+        organ_type: params[2],
+        recipient_blood_group: params[3],
+        urgency_level: params[4] || 'MEDIUM',
+        hla_type: params[5] || 'Standard Panel',
+        request_date: new Date().toISOString().split('T')[0],
+        request_status: 'WAITING',
+        medical_urgency_score: parseInt(params[6] || 50, 10),
+      };
+      dbStore.organRequests.push(record);
+      return { insertId: newId, affectedRows: 1 };
+    }
+
+    if (tableName === 'campdonorregistration') {
+      const newId = dbStore.campRegistrations.length > 0 ? Math.max(...dbStore.campRegistrations.map((r) => r.registration_id)) + 1 : 1;
+      const record = {
+        registration_id: newId,
+        camp_id: parseInt(params[0], 10),
+        donor_id: parseInt(params[1], 10),
+        registration_timestamp: new Date().toISOString().replace('T', ' ').substring(0, 19),
+        time_slot: params[2] || '10:00 - 11:00 AM',
+        attended: false,
+      };
+      dbStore.campRegistrations.push(record);
+      return { insertId: newId, affectedRows: 1 };
+    }
+
+    if (tableName === 'donationcamp') {
+      const newId = dbStore.camps.length > 0 ? Math.max(...dbStore.camps.map((c) => c.camp_id)) + 1 : 1;
+      const record = {
+        camp_id: newId,
+        camp_name: params[0],
+        organizer: params[1],
+        hospital_id: parseInt(params[2], 10),
+        location: params[3] || '',
+        city: params[4] || '',
+        start_date: params[5],
+        end_date: params[6],
+        capacity: parseInt(params[7] || 200, 10),
+        camp_status: 'SCHEDULED',
+        contact_phone: params[8] || '',
+      };
+      dbStore.camps.push(record);
+      return { insertId: newId, affectedRows: 1 };
+    }
+
+    return { insertId: 1, affectedRows: 1 };
+  }
+
+  // Parameterized UPDATE operations
+  if (cleanSql.toUpperCase().startsWith('UPDATE')) {
+    const tableMatch = cleanSql.match(/UPDATE\s+([a-zA-Z0-9_]+)/i);
+    const tableName = tableMatch ? tableMatch[1].toLowerCase() : '';
+    if (tableName === 'donor' && params.length > 0) {
+      const donorId = parseInt(params[params.length - 1], 10);
+      const donor = dbStore.donors.find((d) => d.donor_id === donorId);
+      if (donor) {
+        if (cleanSql.includes('availability_status')) donor.availability_status = params[0];
+        return { affectedRows: 1 };
+      }
+    }
+    if (tableName === 'patient' && params.length > 0) {
+      const patientId = parseInt(params[params.length - 1], 10);
+      const patient = dbStore.patients.find((p) => p.patient_id === patientId);
+      if (patient) {
+        if (cleanSql.includes('medical_status')) patient.medical_status = params[0];
+        return { affectedRows: 1 };
+      }
+    }
+    if (tableName === 'bloodunit' && params.length > 0) {
+      const unitId = parseInt(params[params.length - 1], 10);
+      const unit = dbStore.bloodUnits.find((u) => u.unit_id === unitId);
+      if (unit) {
+        unit.storage_status = params[0];
+        return { affectedRows: 1 };
+      }
+    }
+    return { affectedRows: 1 };
+  }
+
+  // Parameterized Ward selection
+  if (cleanSql.includes('FROM Ward') && params.length > 0) {
+    const hospId = parseInt(params[0], 10);
+    return dbStore.wards.filter((w) => w.hospital_id === hospId);
+  }
+
+  // Default query table responders with parameterized ID support
   if (cleanSql.includes('Hospital') && !cleanSql.includes('BloodRequest')) {
+    if (cleanSql.includes('hospital_id = ?') && params.length > 0) {
+      const hospId = parseInt(params[0], 10);
+      return dbStore.hospitals.filter((h) => h.hospital_id === hospId);
+    }
     return dbStore.hospitals;
   }
   if (cleanSql.includes('Donor') && !cleanSql.includes('BloodDonation')) {
+    if (cleanSql.includes('donor_id = ?') && params.length > 0) {
+      const dId = parseInt(params[0], 10);
+      return dbStore.donors.filter((d) => d.donor_id === dId);
+    }
     return dbStore.donors;
   }
   if (cleanSql.includes('BloodUnit')) {
+    if (cleanSql.includes('unit_id = ?') && params.length > 0) {
+      const uId = parseInt(params[0], 10);
+      return dbStore.bloodUnits.filter((u) => u.unit_id === uId);
+    }
     return dbStore.bloodUnits;
   }
 

@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
+const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
 // Catalog of Approved Predefined Capstone Queries
 const PREDEFINED_QUERIES = [
@@ -230,8 +231,8 @@ router.get('/queries', (req, res) => {
   res.json({ success: true, queries: PREDEFINED_QUERIES });
 });
 
-// Execute SQL Query safely
-router.post('/execute', async (req, res) => {
+// Execute SQL Query safely (RBAC: ADMIN only)
+router.post('/execute', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
   const { sql, queryId } = req.body;
 
   if (!sql) {

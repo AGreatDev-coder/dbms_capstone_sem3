@@ -41,6 +41,7 @@ app.use((req, res, next) => {
 
 // Serve database artifacts (EER Diagram & Schema)
 app.use('/database-artifacts', express.static(path.join(__dirname, '..', 'database')));
+app.use('/api/database-artifacts', express.static(path.join(__dirname, '..', 'database')));
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -74,12 +75,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log('==================================================');
-  console.log(` LIFE-LINK Backend API Server running on port ${PORT}`);
-  console.log(` Healthcheck: http://localhost:${PORT}/api/health`);
-  console.log('==================================================');
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log('==================================================');
+    console.log(` LIFE-LINK Backend API Server running on port ${PORT}`);
+    console.log(` Healthcheck: http://localhost:${PORT}/api/health`);
+    console.log('==================================================');
+  });
+}
 
 module.exports = app;
 

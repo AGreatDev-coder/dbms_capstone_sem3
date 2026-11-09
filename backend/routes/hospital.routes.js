@@ -37,6 +37,32 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Query 6 Implementation: Hospital Staff Hierarchy (Self-Join)
+router.get('/staff-hierarchy', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+  try {
+    const sql = `
+      SELECT 
+        subordinate.staff_id AS employee_staff_id,
+        CONCAT(sub_p.first_name, ' ', sub_p.last_name) AS employee_name,
+        subordinate.job_title AS employee_title,
+        subordinate.department AS department,
+        h.hospital_name,
+        IFNULL(CONCAT(sup_p.first_name, ' ', sup_p.last_name), 'Top Hospital Executive / Self-Directed') AS supervisor_name,
+        IFNULL(supervisor.job_title, 'N/A') AS supervisor_title
+      FROM Staff subordinate
+      INNER JOIN Person sub_p ON subordinate.person_id = sub_p.person_id
+      INNER JOIN Hospital h ON subordinate.hospital_id = h.hospital_id
+      LEFT JOIN Staff supervisor ON subordinate.supervisor_staff_id = supervisor.staff_id
+      LEFT JOIN Person sup_p ON supervisor.person_id = sup_p.person_id
+      ORDER BY h.hospital_name, subordinate.supervisor_staff_id;
+    `;
+    const rows = await db.query(sql);
+    res.json({ success: true, rows });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to retrieve staff hierarchy.' });
+  }
+});
+
 // Get hospital details with wards and staff
 router.get('/:id', async (req, res) => {
   try {

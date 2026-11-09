@@ -15,6 +15,9 @@ function generateToken(user) {
       username: user.username,
       email: user.email,
       role: user.role,
+      donor_id: user.donor_id || null,
+      patient_id: user.patient_id || null,
+      staff_id: user.staff_id || null,
     },
     JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }

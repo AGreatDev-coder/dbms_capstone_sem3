@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import StatCard from '../components/StatCard';
 import { StatusBadge, UrgencyBadge, BloodGroupPill } from '../components/Badge';
 import {
@@ -31,6 +32,7 @@ import {
 } from 'recharts';
 
 const Dashboard = () => {
+  const { user } = useAuth();
   const [metrics, setMetrics] = useState(null);
   const [charts, setCharts] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -85,21 +87,34 @@ const Dashboard = () => {
             Real-time monitoring of blood inventories, priority transfusion queues, and organ candidate networks.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Link
-            to="/sql-lab"
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span>Launch SQL Lab</span>
-          </Link>
-          <Link
-            to="/blood-requests"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition-colors"
-          >
-            <span>Process Blood Requests</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {user?.role === 'ADMIN' && (
+            <Link
+              to="/sql-lab"
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>Launch SQL Lab</span>
+            </Link>
+          )}
+          {['ADMIN', 'STAFF', 'PATIENT'].includes(user?.role) && (
+            <Link
+              to="/blood-requests"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition-colors"
+            >
+              <span>{user?.role === 'PATIENT' ? 'My Blood Requests' : 'Process Blood Requests'}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          )}
+          {user?.role === 'DONOR' && (
+            <Link
+              to="/donation-camps"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-colors"
+            >
+              <span>Browse Donation Camps</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          )}
         </div>
       </div>
 
