@@ -47,7 +47,8 @@ CREATE TABLE Ward (
     ward_type ENUM('ICU', 'EMERGENCY', 'SURGICAL', 'GENERAL_MALE', 'GENERAL_FEMALE', 'PEDIATRIC', 'TRANSPLANT_CARE') NOT NULL,
     floor_number INT NOT NULL,
     total_beds INT NOT NULL CHECK (total_beds > 0),
-    occupied_beds INT NOT NULL DEFAULT 0 CHECK (occupied_beds >= 0 AND occupied_beds <= total_beds),
+    occupied_beds INT NOT NULL DEFAULT 0,
+    CONSTRAINT chk_ward_beds CHECK (occupied_beds >= 0 AND occupied_beds <= total_beds),
     CONSTRAINT fk_ward_hospital FOREIGN KEY (hospital_id) REFERENCES Hospital(hospital_id) ON DELETE CASCADE,
     CONSTRAINT uq_hospital_ward UNIQUE (hospital_id, ward_name)
 ) ENGINE=InnoDB;
@@ -406,7 +407,7 @@ BEGIN
     FROM BloodUnit 
     WHERE unit_id = NEW.unit_id;
 
-    IF v_expiry_date < CURDATE() THEN
+    IF v_expiry_date < DATE(COALESCE(NEW.allocated_date, CURDATE())) THEN
         SIGNAL SQLSTATE '45000'
         SET MESSAGE_TEXT = 'Integrity Violation: Cannot allocate an expired blood unit.';
     END IF;
@@ -589,4 +590,3 @@ proc_label: BEGIN
 END$$
 
 DELIMITER ;
-

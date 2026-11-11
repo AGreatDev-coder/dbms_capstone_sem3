@@ -103,18 +103,18 @@ INSERT INTO Hospital (hospital_id, hospital_name, license_number, address, city,
 -- 3. WARDS
 -- ----------------------------------------------------------------------------
 INSERT INTO Ward (ward_id, hospital_id, ward_name, ward_type, floor_number, total_beds, occupied_beds) VALUES
-(1, 1, 'Cardiovascular ICU', 'ICU', 3, 20, 14),
-(2, 1, 'Emergency Trauma Bay', 'EMERGENCY', 1, 30, 22),
+(1, 1, 'Cardiovascular ICU', 'ICU', 3, 20, 13),
+(2, 1, 'Emergency Trauma Bay', 'EMERGENCY', 1, 30, 21),
 (3, 1, 'Organ Transplant Recovery Unit', 'TRANSPLANT_CARE', 4, 15, 8),
-(4, 1, 'General Surgical Ward A', 'SURGICAL', 2, 40, 28),
-(5, 2, 'Main Emergency & Triage', 'EMERGENCY', 1, 25, 18),
-(6, 2, 'Critical Care Complex', 'ICU', 2, 18, 12),
-(7, 2, 'Liver & Renal Transplant Wing', 'TRANSPLANT_CARE', 3, 12, 6),
-(8, 3, 'Pediatric Intensive Care Unit', 'PEDIATRIC', 2, 15, 9),
-(9, 3, 'Neurosurgery Recovery Unit', 'SURGICAL', 4, 20, 11),
-(10, 4, 'Hematology & Bone Marrow Unit', 'TRANSPLANT_CARE', 5, 25, 19),
-(11, 4, 'Oncology Emergency Ward', 'EMERGENCY', 1, 30, 21),
-(12, 5, 'Cardiothoracic Care Unit', 'ICU', 3, 16, 10);
+(4, 1, 'General Surgical Ward A', 'SURGICAL', 2, 40, 27),
+(5, 2, 'Main Emergency & Triage', 'EMERGENCY', 1, 25, 17),
+(6, 2, 'Critical Care Complex', 'ICU', 2, 18, 11),
+(7, 2, 'Liver & Renal Transplant Wing', 'TRANSPLANT_CARE', 3, 12, 5),
+(8, 3, 'Pediatric Intensive Care Unit', 'PEDIATRIC', 2, 15, 8),
+(9, 3, 'Neurosurgery Recovery Unit', 'SURGICAL', 4, 20, 10),
+(10, 4, 'Hematology & Bone Marrow Unit', 'TRANSPLANT_CARE', 5, 25, 18),
+(11, 4, 'Oncology Emergency Ward', 'EMERGENCY', 1, 30, 20),
+(12, 5, 'Cardiothoracic Care Unit', 'ICU', 3, 16, 9);
 
 -- ----------------------------------------------------------------------------
 -- 4. PERSONS (Supertype)
@@ -155,7 +155,7 @@ INSERT INTO Person (person_id, first_name, last_name, date_of_birth, gender, pho
 (28, 'Bhavna', 'Tiwari', '1990-10-15', 'FEMALE', '+91-9811220066', 'bhavna.t@outlook.com', '67 Rohini Sector 9', 'New Delhi', 'Delhi', '110085', 'A-', 'Satish Tiwari', '+91-9811220067'),
 (29, 'Ramesh', 'Pawar', '1963-03-08', 'MALE', '+91-9821220077', 'ramesh.pawar@outlook.com', '18 Thane West', 'Mumbai', 'Maharashtra', '400601', 'B+', 'Archana Pawar', '+91-9821220078'),
 (30, 'Gayatri', 'Rao', '1977-05-24', 'FEMALE', '+91-9841220088', 'gayatri.rao@outlook.com', '4 Adyar', 'Chennai', 'Tamil Nadu', '600020', 'AB-', 'Mohan Rao', '+91-9841220089'),
-(31, 'Farhan', 'Akhtar', '1989-12-12', 'MALE', '+91-9819220099', 'farhan.a@outlook.com', '32 Bandra Bandstand', 'Mumbai', 'Maharashtra', '400050', 'O+', 'Zoya Akhtar', '+91-9819220100'),
+(31, 'Farhan', 'Akhtar', '1989-12-12', 'MALE', '+91-9819220099', 'farhan.a@outlook.com', '32 Bandra Bandstand', 'Mumbai', 'Maharashtra', '400050', 'B+', 'Zoya Akhtar', '+91-9819220100'),
 (32, 'Kavita', 'Sood', '1981-08-14', 'FEMALE', '+91-9810220111', 'kavita.sood@outlook.com', '71 Vasant Kunj', 'New Delhi', 'Delhi', '110070', 'A+', 'Vivek Sood', '+91-9810220112'),
 (33, 'Pradeep', 'Gowda', '1970-02-05', 'MALE', '+91-9845220122', 'pradeep.g@outlook.com', '29 Rajajinagar', 'Bengaluru', 'Karnataka', '560010', 'B+', 'Sowmya Gowda', '+91-9845220123'),
 (34, 'Anuradha', 'Chatterjee', '1974-06-18', 'FEMALE', '+91-9830220133', 'anuradha.c@outlook.com', '15 Alipore', 'Kolkata', 'West Bengal', '700027', 'O-', 'Debabrata Chatterjee', '+91-9830220134');
@@ -240,13 +240,13 @@ INSERT INTO CampDonorRegistration (camp_id, donor_id, registration_time, attende
 -- ----------------------------------------------------------------------------
 INSERT INTO BloodDonation (donation_id, donor_id, donation_camp_id, hospital_id, recorded_by_staff_id, donation_date, quantity_ml, hemoglobin_level, screening_status, remarks) VALUES
 (1, 1, 1, 1, 7, '2026-08-15', 450, 14.5, 'PASSED', 'Clean collection, universal O- unit'),
-(2, 2, 1, 1, 7, '2026-09-10', 450, 13.8, 'PASSED', 'Good volunteer health'),
-(3, 4, 2, 2, 8, '2026-10-02', 450, 15.0, 'PASSED', 'Component separated into platelets and plasma'),
-(4, 5, 2, 2, 8, '2026-07-20', 450, 14.2, 'PASSED', 'Whole blood unit collected'),
-(5, 6, 1, 1, 7, '2026-08-28', 400, 13.0, 'PASSED', 'Rare A- blood safely harvested'),
-(6, 8, 2, 2, 8, '2026-09-25', 450, 14.8, 'PASSED', 'AB- unit safely stored'),
-(7, 10, 4, 4, 10, '2026-10-14', 450, 13.5, 'PASSED', 'Processed at Tata Memorial blood bank'),
-(8, 12, 1, 1, 7, '2026-09-01', 450, 14.0, 'PASSED', 'Universal O- whole blood unit'),
+(2, 2, NULL, 1, 7, '2026-09-10', 450, 13.8, 'PASSED', 'Good volunteer health'),
+(3, 4, NULL, 2, 8, '2026-10-02', 450, 15.0, 'PASSED', 'Component separated into platelets and plasma'),
+(4, 5, NULL, 2, 8, '2026-07-20', 450, 14.2, 'PASSED', 'Whole blood unit collected'),
+(5, 6, NULL, 1, 7, '2026-08-28', 400, 13.0, 'PASSED', 'Rare A- blood safely harvested'),
+(6, 8, NULL, 2, 8, '2026-09-25', 450, 14.8, 'PASSED', 'AB- unit safely stored'),
+(7, 10, NULL, 4, 10, '2026-10-14', 450, 13.5, 'PASSED', 'Processed at Tata Memorial blood bank'),
+(8, 12, NULL, 1, 7, '2026-09-01', 450, 14.0, 'PASSED', 'Universal O- whole blood unit'),
 (9, 2, NULL, 1, 7, '2026-10-18', 450, 14.1, 'PASSED', 'In-hospital voluntary donation'),
 (10, 4, NULL, 3, 9, '2026-10-24', 450, 15.2, 'PASSED', 'In-hospital emergency replacement donation'),
 (11, 5, NULL, 5, 5, '2026-10-27', 450, 14.6, 'PASSED', 'Routine replacement donation at Manipal');
@@ -255,61 +255,69 @@ INSERT INTO BloodDonation (donation_id, donor_id, donation_camp_id, hospital_id,
 -- 10. BLOOD UNITS
 -- Note: Includes units expiring within next 7 days, currently available,
 -- already allocated, and historical expired units to test all CTEs and Queries.
--- Reference Date for demonstration: 2026-11-05
+-- Uses CURDATE() offsets so dates remain dynamically valid at any evaluation time.
 -- ----------------------------------------------------------------------------
 INSERT INTO BloodUnit (unit_id, donation_id, donor_id, hospital_id, blood_group, component_type, donation_date, expiry_date, storage_status, storage_location) VALUES
 -- AIIMS Blood Units (Hospital 1)
-(1, 1, 1, 1, 'O-', 'RBC', '2026-10-10', '2026-11-21', 'AVAILABLE', 'AIIMS Cold Room 1 - Rack A1'),
-(2, 1, 1, 1, 'O-', 'PLASMA', '2026-10-10', '2027-10-10', 'AVAILABLE', 'AIIMS Ultra-Freezer - Rack P1'),
-(3, 2, 2, 1, 'A+', 'RBC', '2026-10-15', '2026-11-09', 'AVAILABLE', 'AIIMS Cold Room 1 - Rack A2'), -- Expiring in 4 days! (CTE Query 2 match)
-(4, 2, 2, 1, 'A+', 'PLATELETS', '2026-11-02', '2026-11-07', 'AVAILABLE', 'AIIMS Agitator 1'), -- Expiring in 2 days! (CTE Query 2 match)
-(5, 5, 6, 1, 'A-', 'WHOLE_BLOOD', '2026-10-18', '2026-11-12', 'AVAILABLE', 'AIIMS Cold Room 2 - Rack B1'), -- Expiring in 7 days! (CTE Query 2 match)
-(6, 8, 12, 1, 'O-', 'WHOLE_BLOOD', '2026-10-01', '2026-11-04', 'EXPIRED', 'AIIMS Quarantine Bin'), -- Expired yesterday!
-(7, 9, 2, 1, 'A+', 'WHOLE_BLOOD', '2026-10-18', '2026-11-22', 'AVAILABLE', 'AIIMS Cold Room 1 - Rack A3'),
+(1, 1, 1, 1, 'O-', 'RBC', DATE_SUB(CURDATE(), INTERVAL 15 DAY), DATE_ADD(CURDATE(), INTERVAL 20 DAY), 'AVAILABLE', 'AIIMS Cold Room 1 - Rack A1'),
+(2, 1, 1, 1, 'O-', 'PLASMA', DATE_SUB(CURDATE(), INTERVAL 15 DAY), DATE_ADD(CURDATE(), INTERVAL 350 DAY), 'AVAILABLE', 'AIIMS Ultra-Freezer - Rack P1'),
+(3, 2, 2, 1, 'A+', 'RBC', DATE_SUB(CURDATE(), INTERVAL 10 DAY), DATE_ADD(CURDATE(), INTERVAL 4 DAY), 'AVAILABLE', 'AIIMS Cold Room 1 - Rack A2'), -- Expiring in 4 days! (CTE Query 2 match)
+(4, 2, 2, 1, 'A+', 'PLATELETS', DATE_SUB(CURDATE(), INTERVAL 3 DAY), DATE_ADD(CURDATE(), INTERVAL 2 DAY), 'AVAILABLE', 'AIIMS Agitator 1'), -- Expiring in 2 days! (CTE Query 2 match)
+(5, 5, 6, 1, 'A-', 'WHOLE_BLOOD', DATE_SUB(CURDATE(), INTERVAL 8 DAY), DATE_ADD(CURDATE(), INTERVAL 7 DAY), 'AVAILABLE', 'AIIMS Cold Room 2 - Rack B1'), -- Expiring in 7 days! (CTE Query 2 match)
+(6, 8, 12, 1, 'O-', 'WHOLE_BLOOD', DATE_SUB(CURDATE(), INTERVAL 36 DAY), DATE_SUB(CURDATE(), INTERVAL 1 DAY), 'EXPIRED', 'AIIMS Quarantine Bin'), -- Expired yesterday!
+(7, 9, 2, 1, 'A+', 'WHOLE_BLOOD', DATE_SUB(CURDATE(), INTERVAL 7 DAY), DATE_ADD(CURDATE(), INTERVAL 14 DAY), 'AVAILABLE', 'AIIMS Cold Room 1 - Rack A3'),
 
 -- Apollo Blood Units (Hospital 2)
-(8, 3, 4, 2, 'AB+', 'PLATELETS', '2026-11-01', '2026-11-06', 'AVAILABLE', 'Apollo Platelet Shaker A'), -- Expiring tomorrow! (CTE Query 2 match)
-(9, 3, 4, 2, 'AB+', 'PLASMA', '2026-10-02', '2027-10-02', 'AVAILABLE', 'Apollo Deep Freeze 2'),
-(10, 4, 5, 2, 'O+', 'RBC', '2026-10-20', '2026-12-01', 'AVAILABLE', 'Apollo Cold Storage 1 - Bay 4'),
-(11, 4, 5, 2, 'O+', 'WHOLE_BLOOD', '2026-10-05', '2026-11-09', 'AVAILABLE', 'Apollo Cold Storage 1 - Bay 5'), -- Expiring in 4 days!
-(12, 6, 8, 2, 'AB-', 'RBC', '2026-10-12', '2026-11-23', 'AVAILABLE', 'Apollo Rare Blood Vault - R1'),
+(8, 3, 4, 2, 'AB+', 'PLATELETS', DATE_SUB(CURDATE(), INTERVAL 4 DAY), DATE_ADD(CURDATE(), INTERVAL 1 DAY), 'AVAILABLE', 'Apollo Platelet Shaker A'), -- Expiring tomorrow! (CTE Query 2 match)
+(9, 3, 4, 2, 'AB+', 'PLASMA', DATE_SUB(CURDATE(), INTERVAL 20 DAY), DATE_ADD(CURDATE(), INTERVAL 345 DAY), 'AVAILABLE', 'Apollo Deep Freeze 2'),
+(10, 4, 5, 2, 'O+', 'RBC', DATE_SUB(CURDATE(), INTERVAL 5 DAY), DATE_ADD(CURDATE(), INTERVAL 30 DAY), 'AVAILABLE', 'Apollo Cold Storage 1 - Bay 4'),
+(11, 4, 5, 2, 'O+', 'WHOLE_BLOOD', DATE_SUB(CURDATE(), INTERVAL 12 DAY), DATE_ADD(CURDATE(), INTERVAL 10 DAY), 'AVAILABLE', 'Apollo Cold Storage 1 - Bay 5'),
+(12, 6, 8, 2, 'AB-', 'RBC', DATE_SUB(CURDATE(), INTERVAL 10 DAY), DATE_ADD(CURDATE(), INTERVAL 25 DAY), 'AVAILABLE', 'Apollo Rare Blood Vault - R1'),
 
 -- Fortis Blood Units (Hospital 3)
-(13, 10, 4, 3, 'AB+', 'WHOLE_BLOOD', '2026-10-24', '2026-11-28', 'AVAILABLE', 'Fortis Blood Bank Main Bay'),
-(14, 10, 4, 3, 'AB+', 'PLATELETS', '2026-11-02', '2026-11-07', 'AVAILABLE', 'Fortis Agitator Bay 2'), -- Expiring in 2 days!
-(15, 1, 1, 3, 'O-', 'RBC', '2026-10-14', '2026-11-25', 'ALLOCATED', 'Fortis Reserve Unit 1'), -- Allocated
+(13, 10, 4, 3, 'AB+', 'WHOLE_BLOOD', DATE_SUB(CURDATE(), INTERVAL 6 DAY), DATE_ADD(CURDATE(), INTERVAL 28 DAY), 'AVAILABLE', 'Fortis Blood Bank Main Bay'),
+(14, 10, 4, 3, 'AB+', 'PLATELETS', DATE_SUB(CURDATE(), INTERVAL 3 DAY), DATE_ADD(CURDATE(), INTERVAL 2 DAY), 'AVAILABLE', 'Fortis Agitator Bay 2'), -- Expiring in 2 days!
+(15, 1, 1, 3, 'O-', 'RBC', DATE_SUB(CURDATE(), INTERVAL 14 DAY), DATE_ADD(CURDATE(), INTERVAL 21 DAY), 'AVAILABLE', 'Fortis Reserve Unit 1'), -- Allocated by historical allocation below
 
 -- Tata Memorial Blood Units (Hospital 4)
-(16, 7, 10, 4, 'A+', 'PLATELETS', '2026-11-03', '2026-11-08', 'AVAILABLE', 'Tata Platelet Vault A'), -- Expiring in 3 days!
-(17, 7, 10, 4, 'A+', 'RBC', '2026-10-14', '2026-11-25', 'AVAILABLE', 'Tata Cold Storage Bay 2'),
-(18, 7, 10, 4, 'A+', 'CRYO', '2026-10-14', '2027-10-14', 'AVAILABLE', 'Tata Cryo Vault C1'),
+(16, 7, 10, 4, 'A+', 'PLATELETS', DATE_SUB(CURDATE(), INTERVAL 2 DAY), DATE_ADD(CURDATE(), INTERVAL 3 DAY), 'AVAILABLE', 'Tata Platelet Vault A'), -- Expiring in 3 days!
+(17, 7, 10, 4, 'A+', 'RBC', DATE_SUB(CURDATE(), INTERVAL 14 DAY), DATE_ADD(CURDATE(), INTERVAL 21 DAY), 'AVAILABLE', 'Tata Cold Storage Bay 2'),
+(18, 7, 10, 4, 'A+', 'CRYO', DATE_SUB(CURDATE(), INTERVAL 14 DAY), DATE_ADD(CURDATE(), INTERVAL 350 DAY), 'AVAILABLE', 'Tata Cryo Vault C1'),
 
 -- Manipal Blood Units (Hospital 5)
-(19, 11, 5, 5, 'O+', 'RBC', '2026-10-27', '2026-12-08', 'AVAILABLE', 'Manipal Bay 101'),
-(20, 11, 5, 5, 'O+', 'WHOLE_BLOOD', '2026-10-27', '2026-12-01', 'AVAILABLE', 'Manipal Bay 102'),
-(21, 5, 6, 5, 'A-', 'RBC', '2026-09-15', '2026-10-27', 'EXPIRED', 'Manipal Disposal Rack'); -- Expired
+(19, 11, 5, 5, 'O+', 'RBC', DATE_SUB(CURDATE(), INTERVAL 5 DAY), DATE_ADD(CURDATE(), INTERVAL 30 DAY), 'AVAILABLE', 'Manipal Bay 101'),
+(20, 11, 5, 5, 'O+', 'WHOLE_BLOOD', DATE_SUB(CURDATE(), INTERVAL 5 DAY), DATE_ADD(CURDATE(), INTERVAL 25 DAY), 'AVAILABLE', 'Manipal Bay 102'),
+(21, 5, 6, 5, 'A-', 'RBC', DATE_SUB(CURDATE(), INTERVAL 45 DAY), DATE_SUB(CURDATE(), INTERVAL 5 DAY), 'EXPIRED', 'Manipal Disposal Rack'); -- Expired
 
 -- ----------------------------------------------------------------------------
 -- 11. BLOOD REQUESTS
 -- ----------------------------------------------------------------------------
 INSERT INTO BloodRequest (request_id, patient_id, hospital_id, blood_group, component_type, units_required, urgency_level, request_date, required_by_date, request_status, clinical_indication) VALUES
-(1, 1, 1, 'O+', 'RBC', 2, 'CRITICAL', '2026-11-05 06:30:00', '2026-11-05 12:00:00', 'PENDING', 'Active cardiac surgery arterial bleeding'),
-(2, 6, 1, 'A-', 'WHOLE_BLOOD', 2, 'CRITICAL', '2026-11-05 07:15:00', '2026-11-05 13:00:00', 'PENDING', 'Emergency ruptured aortic aneurysm repair'),
-(3, 10, 1, 'A+', 'RBC', 1, 'ROUTINE', '2026-11-04 10:00:00', '2026-11-08 18:00:00', 'PENDING', 'Elective cholecystectomy standby'),
-(4, 2, 2, 'A+', 'WHOLE_BLOOD', 3, 'CRITICAL', '2026-11-05 05:45:00', '2026-11-05 10:00:00', 'PARTIALLY_FULFILLED', 'Acute post-partum hemorrhage'),
-(5, 8, 2, 'AB-', 'RBC', 1, 'HIGH', '2026-11-04 14:20:00', '2026-11-06 18:00:00', 'PENDING', 'Cirrhosis gastrointestinal bleeding episode'),
-(6, 3, 3, 'B-', 'RBC', 2, 'HIGH', '2026-11-03 16:00:00', '2026-11-07 12:00:00', 'PENDING', 'Renal pre-transplant anemia management'),
-(7, 9, 3, 'B+', 'WHOLE_BLOOD', 1, 'MEDIUM', '2026-11-04 11:30:00', '2026-11-09 17:00:00', 'PENDING', 'Complex joint reconstruction surgery'),
-(8, 4, 4, 'AB+', 'PLATELETS', 2, 'CRITICAL', '2026-11-05 08:00:00', '2026-11-05 14:00:00', 'PENDING', 'Leukemia severe thrombocytopenia (< 15,000 count)'),
-(9, 7, 4, 'B+', 'RBC', 1, 'ROUTINE', '2026-11-02 09:00:00', '2026-11-10 12:00:00', 'FULFILLED', 'Scheduled aplastic anemia maintenance transfusion'),
-(10, 5, 5, 'O-', 'RBC', 3, 'CRITICAL', '2026-11-05 04:30:00', '2026-11-05 09:30:00', 'PENDING', 'Emergency poly-trauma hemorrhagic shock');
+(1, 1, 1, 'O+', 'RBC', 2, 'CRITICAL', DATE_SUB(NOW(), INTERVAL 4 HOUR), DATE_ADD(NOW(), INTERVAL 2 HOUR), 'PENDING', 'Active cardiac surgery arterial bleeding'),
+(2, 6, 1, 'A-', 'WHOLE_BLOOD', 2, 'CRITICAL', DATE_SUB(NOW(), INTERVAL 3 HOUR), DATE_ADD(NOW(), INTERVAL 3 HOUR), 'PENDING', 'Emergency ruptured aortic aneurysm repair'),
+(3, 10, 1, 'A+', 'RBC', 1, 'ROUTINE', DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 3 DAY), 'PENDING', 'Elective cholecystectomy standby'),
+(4, 2, 2, 'A+', 'WHOLE_BLOOD', 3, 'CRITICAL', DATE_SUB(NOW(), INTERVAL 6 HOUR), DATE_ADD(NOW(), INTERVAL 1 HOUR), 'PARTIALLY_FULFILLED', 'Acute post-partum hemorrhage'),
+(5, 8, 2, 'AB-', 'RBC', 1, 'HIGH', DATE_SUB(NOW(), INTERVAL 18 HOUR), DATE_ADD(NOW(), INTERVAL 6 HOUR), 'PENDING', 'Cirrhosis gastrointestinal bleeding episode'),
+(6, 3, 3, 'B-', 'RBC', 2, 'HIGH', DATE_SUB(NOW(), INTERVAL 1 DAY), DATE_ADD(NOW(), INTERVAL 1 DAY), 'PENDING', 'Renal pre-transplant anemia management'),
+(7, 9, 3, 'B+', 'WHOLE_BLOOD', 1, 'MEDIUM', DATE_SUB(NOW(), INTERVAL 12 HOUR), DATE_ADD(NOW(), INTERVAL 1 DAY), 'PENDING', 'Complex joint reconstruction surgery'),
+(8, 4, 4, 'AB+', 'PLATELETS', 2, 'CRITICAL', DATE_SUB(NOW(), INTERVAL 2 HOUR), DATE_ADD(NOW(), INTERVAL 4 HOUR), 'PENDING', 'Leukemia severe thrombocytopenia (< 15,000 count)'),
+(9, 7, 4, 'B+', 'RBC', 1, 'ROUTINE', DATE_SUB(NOW(), INTERVAL 2 DAY), DATE_ADD(NOW(), INTERVAL 2 DAY), 'FULFILLED', 'Scheduled aplastic anemia maintenance transfusion'),
+(10, 5, 5, 'O-', 'RBC', 3, 'CRITICAL', DATE_SUB(NOW(), INTERVAL 5 HOUR), DATE_ADD(NOW(), INTERVAL 1 HOUR), 'PENDING', 'Emergency poly-trauma hemorrhagic shock');
 
 -- ----------------------------------------------------------------------------
 -- 12. BLOOD ALLOCATION (Junction Table M:N)
 -- ----------------------------------------------------------------------------
 INSERT INTO BloodAllocation (allocation_id, request_id, unit_id, allocated_by_staff_id, allocated_date, allocation_status, notes) VALUES
-(1, 4, 11, 8, '2026-11-05 07:00:00', 'ALLOCATED', 'Unit 11 allocated for acute PPH patient 2 at Apollo.'),
-(2, 6, 15, 9, '2026-11-04 18:00:00', 'ALLOCATED', 'Universal O- RBC unit 15 allocated to B- patient 3 at Fortis.');
+(1, 4, 11, 8, DATE_SUB(NOW(), INTERVAL 2 HOUR), 'ALLOCATED', 'Unit 11 allocated for acute PPH patient 2 at Apollo.'),
+(2, 6, 15, 9, DATE_SUB(NOW(), INTERVAL 4 HOUR), 'ALLOCATED', 'Universal O- RBC unit 15 allocated to B- patient 3 at Fortis.');
+
+UPDATE BloodUnit
+SET storage_status = 'ALLOCATED'
+WHERE unit_id IN (11, 15);
+
+UPDATE BloodRequest
+SET request_status = 'PARTIALLY_FULFILLED'
+WHERE request_id = 6;
 
 -- ----------------------------------------------------------------------------
 -- 13. ORGAN DONATION NETWORK
@@ -335,7 +343,7 @@ INSERT INTO OrganRequest (organ_request_id, patient_id, hospital_id, organ_type,
 INSERT INTO OrganMatch (match_id, organ_donation_id, organ_request_id, match_date, compatibility_status, verification_status, match_score, medical_notes, verified_by_staff_id, verification_date) VALUES
 (1, 1, 1, '2026-10-28 14:00:00', 'HIGH_COMPATIBILITY', 'PENDING_VERIFICATION', 94.50, 'Illustrative Match: 5/6 HLA match. Negative cross-match. Subject to clinical ethics committee verification.', NULL, NULL),
 (2, 2, 2, '2026-10-29 11:30:00', 'HIGH_COMPATIBILITY', 'VERIFIED_BY_COMMITTEE', 91.00, 'Approved by Medical Board for clinical workup. Crossmatch completed.', 3, '2026-11-01 16:30:00'),
-(3, 4, 3, '2026-11-02 09:15:00', 'POTENTIAL_MATCH', 'PENDING_VERIFICATION', 86.00, 'Potential cardiac match identified. Donor brain-stem reflex tests underway.', NULL, NULL),
+(3, 4, 3, '2026-11-02 09:15:00', 'INCOMPATIBLE', 'REJECTED', 0.00, 'Rejected during preliminary screening: B- donor is ABO-incompatible with O+ heart recipient.', 3, '2026-11-02 10:00:00'),
 (4, 7, 4, '2026-11-03 15:45:00', 'HIGH_COMPATIBILITY', 'PENDING_VERIFICATION', 96.00, 'Universal donor match with identical HLA locus markers. Highest priority candidate.', NULL, NULL);
 
 -- ----------------------------------------------------------------------------

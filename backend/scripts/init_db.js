@@ -8,6 +8,58 @@ const path = require('path');
 const mysql = require('mysql2/promise');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
+function splitSqlStatements(sql) {
+  const lines = sql.split(/\r?\n/);
+  const statements = [];
+  let delimiter = ';';
+  let current = '';
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (/^DELIMITER\s+/i.test(trimmed)) {
+      delimiter = trimmed.replace(/^DELIMITER\s+/i, '').trim();
+      continue;
+    }
+
+    current += line + '\n';
+
+    if (current.trimEnd().endsWith(delimiter)) {
+      const statement = current.trim().slice(0, -delimiter.length).trim();
+
+      if (statement) {
+        statements.push(statement);
+      }
+
+      current = '';
+    }
+  }
+
+  if (current.trim()) {
+    statements.push(current.trim());
+  }
+
+  return statements;
+}
+
+async function executeSqlFile(connection, filePath, label) {
+  const sql = fs.readFileSync(filePath, 'utf8');
+  const statements = splitSqlStatements(sql);
+
+  console.log(`Executing ${label}: ${statements.length} statements...`);
+
+  for (let i = 0; i < statements.length; i++) {
+    try {
+      await connection.query(statements[i]);
+    } catch (err) {
+      console.error(`Failed at ${label} statement ${i + 1}:`);
+      throw err;
+    }
+  }
+
+  console.log(`${label} executed successfully.`);
+}
+
 async function initDatabase() {
   console.log('==================================================');
   console.log(' LIFE-LINK MySQL 8.0 Database Initialization');
@@ -22,35 +74,28 @@ async function initDatabase() {
   };
 
   let connection;
+
   try {
     console.log(`Connecting to MySQL at ${connectionConfig.host}:${connectionConfig.port} as ${connectionConfig.user}...`);
+
     connection = await mysql.createConnection(connectionConfig);
     console.log('Connected to MySQL server successfully.');
 
-    // 1. Read and execute schema.sql
     const schemaPath = path.join(__dirname, '..', '..', 'database', 'schema.sql');
-    console.log(`Reading DDL schema from: ${schemaPath}`);
-    const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-    
-    console.log('Executing database schema creation...');
-    await connection.query(schemaSql);
-    console.log('Schema created successfully: Tables, Views, Triggers, and Stored Procedures initialized.');
+    console.log(`Reading schema from: ${schemaPath}`);
 
-    // 2. Read and execute seed_data.sql
+    await executeSqlFile(connection, schemaPath, 'Database schema');
+
     const seedPath = path.join(__dirname, '..', '..', 'database', 'seed_data.sql');
-    console.log(`Reading Seed Data from: ${seedPath}`);
-    const seedSql = fs.readFileSync(seedPath, 'utf8');
+    console.log(`Reading seed data from: ${seedPath}`);
 
-    console.log('Executing seed data insertion...');
-    await connection.query(seedSql);
-    console.log('Seed data inserted successfully.');
+    await executeSqlFile(connection, seedPath, 'Seed data');
 
-    // 3. Verify counts
-    const [hospitals] = await connection.query('SELECT COUNT(*) as count FROM lifelink_db.Hospital');
-    const [donors] = await connection.query('SELECT COUNT(*) as count FROM lifelink_db.Donor');
-    const [units] = await connection.query('SELECT COUNT(*) as count FROM lifelink_db.BloodUnit');
-    const [requests] = await connection.query('SELECT COUNT(*) as count FROM lifelink_db.BloodRequest');
-    const [organMatches] = await connection.query('SELECT COUNT(*) as count FROM lifelink_db.OrganMatch');
+    const [hospitals] = await connection.query('SELECT COUNT(*) AS count FROM lifelink_db.Hospital');
+    const [donors] = await connection.query('SELECT COUNT(*) AS count FROM lifelink_db.Donor');
+    const [units] = await connection.query('SELECT COUNT(*) AS count FROM lifelink_db.BloodUnit');
+    const [requests] = await connection.query('SELECT COUNT(*) AS count FROM lifelink_db.BloodRequest');
+    const [organMatches] = await connection.query('SELECT COUNT(*) AS count FROM lifelink_db.OrganMatch');
 
     console.log('\n--- Database Verification Summary ---');
     console.log(`Hospitals:       ${hospitals[0].count}`);
@@ -63,10 +108,8 @@ async function initDatabase() {
 
   } catch (err) {
     console.error('\n[Database Init Error]:', err.message);
-    if (err.code === 'ECONNREFUSED') {
-      console.error('Hint: Ensure your local MySQL 8.0 service is running and credentials in backend/.env are correct.');
-    }
-    process.exit(1);
+    console.error('Error code:', err.code || 'Unknown');
+    process.exitCode = 1;
   } finally {
     if (connection) {
       await connection.end();
@@ -75,4 +118,3 @@ async function initDatabase() {
 }
 
 initDatabase();
-
