@@ -14,6 +14,7 @@ import BloodRequests from './pages/BloodRequests';
 import OrganDonation from './pages/OrganDonation';
 import DonationCamps from './pages/DonationCamps';
 import SQLLaboratory from './pages/SQLLaboratory';
+import DBMSLearningLab from './pages/DBMSLearningLab';
 import EERDiagramPage from './pages/EERDiagramPage';
 import Login from './pages/Login';
 
@@ -181,9 +182,19 @@ function App() {
           <Route
             path="/sql-lab"
             element={
-              <ProtectedRoute allowedRoles={['ADMIN']}>
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
                 <MainLayout>
                   <SQLLaboratory />
+                </MainLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dbms-lab"
+            element={
+              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR', 'PATIENT']}>
+                <MainLayout>
+                  <DBMSLearningLab />
                 </MainLayout>
               </ProtectedRoute>
             }

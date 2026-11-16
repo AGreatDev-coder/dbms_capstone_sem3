@@ -1,6 +1,6 @@
 /**
- * Blood Bank Management Routes (Module 5, Query 2, Query 3)
- * Handles Blood Donations, Generating Blood Units, Inventory, and Expiry Tracking CTE
+ * Blood Bank & Inventory Routes (Module 5 & Query 2 & Query 3)
+ * Connected directly to MySQL 8.0 (InnoDB) with CTE queries and Compatibility Matrix
  */
 
 const express = require('express');
@@ -8,257 +8,304 @@ const router = express.Router();
 const db = require('../config/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
-// Get blood inventory with filters
+// Get blood inventory with filters, search, and pagination
 router.get('/inventory', async (req, res) => {
   try {
-    const { blood_group, storage_status, hospital_id, component_type } = req.query;
+    const { blood_group, component_type, hospital_id, search, page = 1, limit = 50 } = req.query;
+    const targetStatus = req.query.storage_status || req.query.status;
 
-    let units = db.dbStore.bloodUnits.map((u) => {
-      const hospital = db.dbStore.hospitals.find((h) => h.hospital_id === u.hospital_id);
-      const donor = db.dbStore.donors.find((d) => d.donor_id === u.donor_id);
-      const donorPerson = donor ? db.dbStore.persons.find((p) => p.person_id === donor.person_id) : null;
+    const conditions = ['1=1'];
+    const params = [];
 
-      const today = new Date();
-      const exp = new Date(u.expiry_date);
-      const diffDays = Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
+    if (blood_group) {
+      conditions.push('bu.blood_group = ?');
+      params.push(blood_group);
+    }
+    if (component_type) {
+      conditions.push('bu.component_type = ?');
+      params.push(component_type);
+    }
+    if (hospital_id) {
+      conditions.push('bu.hospital_id = ?');
+      params.push(parseInt(hospital_id, 10));
+    }
+    if (targetStatus && targetStatus !== 'ALL') {
+      conditions.push('bu.storage_status = ?');
+      params.push(targetStatus);
+    }
+    if (search && search.trim()) {
+      conditions.push('(h.hospital_name LIKE ? OR bu.storage_location LIKE ?)');
+      const pattern = `%${search.trim()}%`;
+      params.push(pattern, pattern);
+    }
 
-      return {
-        ...u,
-        hospital_name: hospital ? hospital.hospital_name : 'Unknown Hospital',
-        donor_name: donorPerson ? `${donorPerson.first_name} ${donorPerson.last_name}` : 'Anonymous Donor',
-        days_to_expiry: diffDays,
-        is_expired: exp < today,
-      };
+    const whereClause = conditions.join(' AND ');
+
+    const countSql = `
+      SELECT COUNT(*) AS total
+      FROM BloodUnit bu
+      JOIN Hospital h ON bu.hospital_id = h.hospital_id
+      WHERE ${whereClause}
+    `;
+    const countRes = await db.query(countSql, params);
+    const total = countRes[0]?.total || 0;
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = limit === 'all' ? 1000 : Math.max(1, parseInt(limit, 10) || 50);
+    const offset = (pageNum - 1) * limitNum;
+
+    const sql = `
+      SELECT 
+        bu.unit_id,
+        bu.donation_id,
+        bu.donor_id,
+        bu.hospital_id,
+        bu.blood_group,
+        bu.component_type,
+        bu.donation_date,
+        bu.expiry_date,
+        DATEDIFF(bu.expiry_date, CURDATE()) AS days_until_expiry,
+        bu.storage_status,
+        bu.storage_location,
+        h.hospital_name,
+        h.city AS hospital_city
+      FROM BloodUnit bu
+      JOIN Hospital h ON bu.hospital_id = h.hospital_id
+      WHERE ${whereClause}
+      ORDER BY bu.expiry_date ASC, bu.unit_id ASC
+      LIMIT ? OFFSET ?
+    `;
+
+    const inventory = await db.query(sql, [...params, limitNum, offset]);
+
+    res.json({
+      success: true,
+      count: total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+      units: inventory,
+      inventory,
     });
-
-    if (blood_group) units = units.filter((u) => u.blood_group === blood_group);
-    if (storage_status) units = units.filter((u) => u.storage_status === storage_status);
-    if (hospital_id) units = units.filter((u) => u.hospital_id === parseInt(hospital_id, 10));
-    if (component_type) units = units.filter((u) => u.component_type === component_type);
-
-    res.json({ success: true, count: units.length, units });
   } catch (err) {
+    console.error('Inventory retrieve error:', err);
     res.status(500).json({ success: false, message: 'Failed to retrieve blood inventory.' });
   }
 });
 
-// Query 2 Implementation: CTE Blood Expiry Tracking (Next 7 Days)
-// Excludes expired, allocated, and discarded units
+// Hospital-Wise Inventory Matrix Summary (Query 3 / View)
+router.get('/summary', async (req, res) => {
+  try {
+    const sql = `
+      SELECT 
+        h.hospital_id,
+        h.hospital_name,
+        h.city,
+        COUNT(CASE WHEN bu.storage_status = 'AVAILABLE' AND bu.expiry_date >= CURDATE() THEN 1 END) AS available_units,
+        COUNT(CASE WHEN bu.storage_status = 'AVAILABLE' AND bu.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) THEN 1 END) AS expiring_soon_7d,
+        COUNT(CASE WHEN bu.storage_status = 'ALLOCATED' THEN 1 END) AS allocated_units,
+        COUNT(CASE WHEN bu.storage_status = 'EXPIRED' OR (bu.storage_status = 'AVAILABLE' AND bu.expiry_date < CURDATE()) THEN 1 END) AS expired_units,
+        COUNT(bu.unit_id) AS total_units_tracked
+      FROM Hospital h
+      LEFT JOIN BloodUnit bu ON h.hospital_id = bu.hospital_id
+      GROUP BY h.hospital_id, h.hospital_name, h.city
+      ORDER BY available_units DESC
+    `;
+    const summary = await db.query(sql);
+
+    res.json({
+      success: true,
+      count: summary.length,
+      summary,
+    });
+  } catch (err) {
+    console.error('Inventory summary error:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve inventory summary.' });
+  }
+});
+
+// Blood Donations History Log
+router.get('/donations', async (req, res) => {
+  try {
+    const sql = `
+      SELECT 
+        bd.donation_id,
+        bd.donor_id,
+        bd.donation_camp_id,
+        bd.hospital_id,
+        bd.recorded_by_staff_id,
+        bd.donation_date,
+        bd.quantity_ml,
+        bd.hemoglobin_level,
+        bd.screening_status,
+        bd.remarks,
+        CONCAT(p.first_name, ' ', p.last_name) AS donor_name,
+        d.blood_group,
+        h.hospital_name,
+        c.camp_name
+      FROM BloodDonation bd
+      JOIN Donor d ON bd.donor_id = d.donor_id
+      JOIN Person p ON d.person_id = p.person_id
+      JOIN Hospital h ON bd.hospital_id = h.hospital_id
+      LEFT JOIN DonationCamp c ON bd.donation_camp_id = c.camp_id
+      ORDER BY bd.donation_date DESC, bd.donation_id DESC
+    `;
+    const donations = await db.query(sql);
+
+    res.json({
+      success: true,
+      count: donations.length,
+      donations,
+    });
+  } catch (err) {
+    console.error('Blood donations error:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve donations log.' });
+  }
+});
+
+// Query 2 Implementation: CTE for Units Expiring within Next 7 Days
 router.get('/expiring-soon', async (req, res) => {
   try {
     const sql = `
       WITH ExpiringUnitsCTE AS (
-          SELECT 
-              bu.unit_id,
-              h.hospital_name,
-              bu.blood_group,
-              bu.component_type,
-              bu.donation_date,
-              bu.expiry_date,
-              DATEDIFF(bu.expiry_date, CURDATE()) AS remaining_shelf_life_days,
-              bu.storage_location
-          FROM BloodUnit bu
-          JOIN Hospital h ON bu.hospital_id = h.hospital_id
-          WHERE bu.storage_status = 'AVAILABLE'
-            AND bu.expiry_date >= CURDATE()
-            AND bu.expiry_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+        SELECT 
+          bu.unit_id,
+          h.hospital_name,
+          bu.blood_group,
+          bu.component_type,
+          bu.donation_date,
+          bu.expiry_date,
+          DATEDIFF(bu.expiry_date, CURDATE()) AS remaining_shelf_life_days,
+          bu.storage_location
+        FROM BloodUnit bu
+        JOIN Hospital h ON bu.hospital_id = h.hospital_id
+        WHERE bu.storage_status = 'AVAILABLE'
+          AND bu.expiry_date >= CURDATE()
+          AND bu.expiry_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY)
       )
       SELECT 
-          unit_id,
-          hospital_name,
-          blood_group,
-          component_type,
-          donation_date,
-          expiry_date,
-          remaining_shelf_life_days,
-          storage_location,
-          CASE 
-              WHEN remaining_shelf_life_days <= 2 THEN 'CRITICAL ALERT: EXPIRES IN <= 48 HOURS'
-              WHEN remaining_shelf_life_days <= 4 THEN 'URGENT ATTENTION: EXPIRES IN <= 4 DAYS'
-              ELSE 'MONITOR: EXPIRES WITHIN 7 DAYS'
-          END AS action_recommendation
+        unit_id,
+        hospital_name,
+        blood_group,
+        component_type,
+        donation_date,
+        expiry_date,
+        remaining_shelf_life_days,
+        storage_location,
+        CASE 
+          WHEN remaining_shelf_life_days <= 2 THEN 'CRITICAL ALERT: EXPIRES IN <= 48 HOURS'
+          WHEN remaining_shelf_life_days <= 4 THEN 'URGENT ATTENTION: EXPIRES IN <= 4 DAYS'
+          ELSE 'MONITOR: EXPIRES WITHIN 7 DAYS'
+        END AS action_recommendation
       FROM ExpiringUnitsCTE
-      ORDER BY remaining_shelf_life_days ASC, blood_group ASC;
+      ORDER BY remaining_shelf_life_days ASC, blood_group ASC
     `;
 
-    const results = await db.query(sql);
+    const expiringUnits = await db.query(sql);
 
     res.json({
       success: true,
-      query_concept: 'Common Table Expression (WITH clause) with Date Math Predicate',
-      count: results.length,
-      expiringUnits: results,
+      count: expiringUnits.length,
+      expiringUnits,
+      query_type: 'COMMON TABLE EXPRESSION (WITH ... AS)',
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to execute expiry tracking CTE.' });
+    console.error('CTE expiring units error:', err);
+    res.status(500).json({ success: false, message: 'Failed to compute expiring blood units via CTE.' });
   }
 });
 
-// Query 3 Implementation: CTE Hospital-wise Blood Inventory Summary
-router.get('/summary', async (req, res) => {
+// Blood Compatibility Reference Matrix
+router.get('/compatibility', async (req, res) => {
   try {
     const sql = `
-      WITH HospitalBloodStats AS (
-          SELECT 
-              h.hospital_id,
-              h.hospital_name,
-              h.city,
-              bu.blood_group,
-              SUM(CASE WHEN bu.storage_status = 'AVAILABLE' AND bu.expiry_date >= CURDATE() THEN 1 ELSE 0 END) AS available_units,
-              SUM(CASE WHEN bu.storage_status = 'AVAILABLE' AND bu.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS expiring_soon_7d,
-              SUM(CASE WHEN bu.storage_status = 'EXPIRED' OR (bu.storage_status = 'AVAILABLE' AND bu.expiry_date < CURDATE()) THEN 1 ELSE 0 END) AS expired_units,
-              SUM(CASE WHEN bu.storage_status = 'ALLOCATED' THEN 1 ELSE 0 END) AS allocated_units,
-              COUNT(bu.unit_id) AS total_units_cataloged
-          FROM Hospital h
-          LEFT JOIN BloodUnit bu ON h.hospital_id = bu.hospital_id
-          GROUP BY h.hospital_id, h.hospital_name, h.city, bu.blood_group
-      )
-      SELECT 
-          hospital_name,
-          city,
-          IFNULL(blood_group, 'N/A') AS blood_group,
-          available_units,
-          expiring_soon_7d,
-          expired_units,
-          allocated_units,
-          total_units_cataloged
-      FROM HospitalBloodStats
-      ORDER BY hospital_name, blood_group;
+      SELECT * 
+      FROM BloodCompatibility
+      ORDER BY recipient_blood_group, donor_blood_group
     `;
+    const compatibility = await db.query(sql);
 
-    const results = await db.query(sql);
-    res.json({ success: true, summary: results });
-  } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to compute inventory summary.' });
-  }
-});
-
-// Get blood donations history
-router.get('/donations', async (req, res) => {
-  try {
-    const donations = db.dbStore.donations.map((d) => {
-      const donor = db.dbStore.donors.find((dn) => dn.donor_id === d.donor_id);
-      const person = donor ? db.dbStore.persons.find((p) => p.person_id === donor.person_id) : null;
-      const hospital = db.dbStore.hospitals.find((h) => h.hospital_id === d.hospital_id);
-      const camp = d.donation_camp_id ? db.dbStore.camps.find((c) => c.camp_id === d.donation_camp_id) : null;
-      const staff = d.recorded_by_staff_id ? db.dbStore.staff.find((s) => s.staff_id === d.recorded_by_staff_id) : null;
-      const staffPerson = staff ? db.dbStore.persons.find((p) => p.person_id === staff.person_id) : null;
-
-      return {
-        ...d,
-        donor_name: person ? `${person.first_name} ${person.last_name}` : 'Unknown Donor',
-        blood_group: donor ? donor.blood_group : 'O+',
-        hospital_name: hospital ? hospital.hospital_name : 'Hospital',
-        camp_name: camp ? camp.camp_name : 'In-Hospital Collection',
-        recorded_by_name: staffPerson ? `${staffPerson.first_name} ${staffPerson.last_name}` : 'Medical Staff',
-      };
+    res.json({
+      success: true,
+      count: compatibility.length,
+      compatibility,
     });
-
-    res.json({ success: true, count: donations.length, donations });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to retrieve blood donations.' });
+    console.error('Compatibility error:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve blood compatibility matrix.' });
   }
 });
 
-// Record new blood donation and generate blood units
-router.post('/donations', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+// Register new blood unit into inventory
+router.post('/inventory', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   try {
-    const { donor_id, hospital_id, donation_camp_id, quantity_ml, hemoglobin_level, component_types, remarks } = req.body;
+    const {
+      donation_id,
+      donor_id,
+      hospital_id,
+      blood_group,
+      component_type = 'WHOLE_BLOOD',
+      donation_date,
+      expiry_date,
+      storage_location,
+    } = req.body;
 
-    if (!donor_id || !hospital_id || !quantity_ml || !hemoglobin_level) {
+    if (!hospital_id || !blood_group || !expiry_date) {
       return res.status(400).json({
         success: false,
-        message: 'Donor ID, Hospital ID, quantity_ml, and hemoglobin_level are required.',
+        message: 'Hospital, blood group, and expiry date are required.',
       });
     }
 
-    const donor = db.dbStore.donors.find((d) => d.donor_id === parseInt(donor_id, 10));
-    if (!donor) {
-      return res.status(404).json({ success: false, message: 'Donor not found.' });
-    }
-
-    const hb = parseFloat(hemoglobin_level);
-    if (hb < 10.0) {
-      return res.status(422).json({
-        success: false,
-        message: `Safety Deferral: Donor hemoglobin (${hb} g/dL) is below the minimum threshold of 10.0 g/dL.`,
-      });
-    }
-
-    const screeningStatus = hb >= 12.5 ? 'PASSED' : 'PENDING';
-    const donationDate = new Date().toISOString().split('T')[0];
-
-    // 1. Create Donation Record
-    const newDonationId = db.dbStore.donations.length > 0 ? Math.max(...db.dbStore.donations.map((d) => d.donation_id)) + 1 : 1;
-    const newDonation = {
-      donation_id: newDonationId,
-      donor_id: parseInt(donor_id, 10),
-      donation_camp_id: donation_camp_id ? parseInt(donation_camp_id, 10) : null,
-      hospital_id: parseInt(hospital_id, 10),
-      recorded_by_staff_id: req.user.user_id || 7,
-      donation_date: donationDate,
-      quantity_ml: parseInt(quantity_ml, 10),
-      hemoglobin_level: hb,
-      screening_status: screeningStatus,
-      remarks: remarks || 'Standard phlebotomy collection.',
-    };
-    db.dbStore.donations.push(newDonation);
-
-    // Update donor's last donation date
-    donor.last_donation_date = donationDate;
-
-    // 2. Generate Blood Unit(s)
-    const generatedUnits = [];
-    const components = component_types && component_types.length > 0 ? component_types : ['WHOLE_BLOOD'];
-
-    components.forEach((comp) => {
-      const newUnitId = db.dbStore.bloodUnits.length > 0 ? Math.max(...db.dbStore.bloodUnits.map((u) => u.unit_id)) + 1 : 1;
-      
-      // Shelf life based on component
-      const expDate = new Date();
-      if (comp === 'PLATELETS') {
-        expDate.setDate(expDate.getDate() + 5);
-      } else if (comp === 'PLASMA' || comp === 'CRYO') {
-        expDate.setDate(expDate.getDate() + 365);
-      } else {
-        // WHOLE_BLOOD or RBC
-        expDate.setDate(expDate.getDate() + 35);
-      }
-
-      const unit = {
-        unit_id: newUnitId,
-        donation_id: newDonationId,
-        donor_id: parseInt(donor_id, 10),
-        hospital_id: parseInt(hospital_id, 10),
-        blood_group: donor.blood_group,
-        component_type: comp,
-        donation_date: donationDate,
-        expiry_date: expDate.toISOString().split('T')[0],
-        storage_status: 'AVAILABLE',
-        storage_location: `Vault Bay ${comp[0]}-${Math.floor(Math.random() * 20 + 1)}`,
-      };
-
-      db.dbStore.bloodUnits.push(unit);
-      generatedUnits.push(unit);
-    });
+    const sql = `
+      INSERT INTO BloodUnit 
+      (donation_id, donor_id, hospital_id, blood_group, component_type, donation_date, expiry_date, storage_status, storage_location)
+      VALUES (?, ?, ?, ?, ?, COALESCE(?, CURDATE()), ?, 'AVAILABLE', ?)
+    `;
+    const result = await db.query(sql, [
+      donation_id ? parseInt(donation_id, 10) : null,
+      donor_id ? parseInt(donor_id, 10) : null,
+      parseInt(hospital_id, 10),
+      blood_group,
+      component_type,
+      donation_date || null,
+      expiry_date,
+      storage_location || 'Central Blood Vault',
+    ]);
 
     res.status(201).json({
       success: true,
-      donation_id: newDonationId,
-      units_generated: generatedUnits.length,
-      generatedUnits,
-      message: `Donation registered and ${generatedUnits.length} blood unit(s) cataloged into inventory.`,
+      unit_id: result.insertId,
+      message: `Blood unit ${result.insertId} registered in inventory.`,
     });
   } catch (err) {
-    console.error('Blood donation error:', err);
-    res.status(500).json({ success: false, message: 'Failed to record blood donation.' });
+    console.error('Create blood unit error:', err);
+    res.status(500).json({ success: false, message: `Failed to add blood unit: ${err.message}` });
   }
 });
 
-// Compatibility Matrix lookup
-router.get('/compatibility', (req, res) => {
-  res.json({ success: true, compatibility: db.dbStore.compatibility });
+// Update blood unit status (e.g. DISCARDED, QUARANTINED)
+router.put('/inventory/:id/status', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+  try {
+    const unitId = parseInt(req.params.id, 10);
+    const { storage_status, storage_location } = req.body;
+
+    const sql = `
+      UPDATE BloodUnit 
+      SET 
+        storage_status = COALESCE(?, storage_status),
+        storage_location = COALESCE(?, storage_location)
+      WHERE unit_id = ?
+    `;
+    await db.query(sql, [storage_status || null, storage_location || null, unitId]);
+
+    res.json({
+      success: true,
+      message: `Blood unit ${unitId} updated to ${storage_status}.`,
+    });
+  } catch (err) {
+    console.error('Update blood unit error:', err);
+    res.status(500).json({ success: false, message: `Failed to update blood unit: ${err.message}` });
+  }
 });
 
 module.exports = router;
-

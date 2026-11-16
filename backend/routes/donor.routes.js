@@ -1,6 +1,6 @@
 /**
  * Donor Management Routes (Module 3 & Query 4)
- * Handles Donor registration, filtering, donation history, and sensitive data view
+ * Connected directly to MySQL 8.0 (InnoDB) with full CRUD, search, filter, pagination, and View support
  */
 
 const express = require('express');
@@ -8,143 +8,227 @@ const router = express.Router();
 const db = require('../config/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
-// Get all donors with Person supertype attributes (Authorized Staff / Admin view)
-router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+// Get all donors with Person supertype attributes, donation counts, search, and pagination
+router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'), async (req, res) => {
   try {
-    const { blood_group, donor_type, status } = req.query;
+    const {
+      blood_group,
+      donor_type,
+      status,
+      search,
+      sortBy = 'registration_date',
+      sortOrder = 'DESC',
+      page = 1,
+      limit = 25,
+    } = req.query;
 
-    let donors = db.dbStore.donors.map((d) => {
-      const person = db.dbStore.persons.find((p) => p.person_id === d.person_id);
-      const donationCount = db.dbStore.donations.filter((dn) => dn.donor_id === d.donor_id).length;
-      return {
-        ...d,
-        name: person ? `${person.first_name} ${person.last_name}` : 'Unknown',
-        first_name: person ? person.first_name : '',
-        last_name: person ? person.last_name : '',
-        gender: person ? person.gender : 'OTHER',
-        phone: person ? person.phone : '',
-        email: person ? person.email : '',
-        city: person ? person.city : '',
-        state: person ? person.state : '',
-        donation_count: donationCount,
-      };
-    });
+    const conditions = ['1=1'];
+    const params = [];
 
     if (blood_group) {
-      donors = donors.filter((d) => d.blood_group === blood_group);
+      conditions.push('d.blood_group = ?');
+      params.push(blood_group);
     }
     if (donor_type) {
-      donors = donors.filter((d) => d.donor_type === donor_type);
+      conditions.push('d.donor_type = ?');
+      params.push(donor_type);
     }
     if (status) {
-      donors = donors.filter((d) => d.availability_status === status);
+      conditions.push('d.availability_status = ?');
+      params.push(status);
+    }
+    if (search && search.trim()) {
+      conditions.push('(p.first_name LIKE ? OR p.last_name LIKE ? OR p.phone LIKE ? OR p.city LIKE ?)');
+      const pattern = `%${search.trim()}%`;
+      params.push(pattern, pattern, pattern, pattern);
     }
 
-    res.json({ success: true, count: donors.length, donors });
+    const whereClause = conditions.join(' AND ');
+
+    // Total count
+    const countSql = `
+      SELECT COUNT(*) AS total
+      FROM Donor d
+      JOIN Person p ON d.person_id = p.person_id
+      WHERE ${whereClause}
+    `;
+    const countResult = await db.query(countSql, params);
+    const total = countResult[0]?.total || 0;
+
+    const allowedSortFields = {
+      donor_id: 'd.donor_id',
+      name: 'p.first_name',
+      blood_group: 'd.blood_group',
+      donor_type: 'd.donor_type',
+      registration_date: 'd.registration_date',
+      availability_status: 'd.availability_status',
+    };
+    const orderCol = allowedSortFields[sortBy] || 'd.registration_date';
+    const orderDir = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = limit === 'all' ? 1000 : Math.max(1, parseInt(limit, 10) || 25);
+    const offset = (pageNum - 1) * limitNum;
+
+    const dataSql = `
+      SELECT 
+        d.donor_id,
+        d.person_id,
+        d.donor_type,
+        d.blood_group,
+        d.registration_date,
+        d.availability_status,
+        d.last_donation_date,
+        d.deferral_reason,
+        d.medical_history_notes,
+        CONCAT(p.first_name, ' ', p.last_name) AS name,
+        p.first_name,
+        p.last_name,
+        p.gender,
+        p.phone,
+        p.email,
+        p.address,
+        p.city,
+        p.state,
+        p.pincode,
+        COUNT(bd.donation_id) AS donation_count
+      FROM Donor d
+      JOIN Person p ON d.person_id = p.person_id
+      LEFT JOIN BloodDonation bd ON d.donor_id = bd.donor_id
+      WHERE ${whereClause}
+      GROUP BY d.donor_id
+      ORDER BY ${orderCol} ${orderDir}
+      LIMIT ? OFFSET ?
+    `;
+
+    const donors = await db.query(dataSql, [...params, limitNum, offset]);
+
+    res.json({
+      success: true,
+      count: total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+      limit: limitNum,
+      donors,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to retrieve donors.' });
+    console.error('Donor retrieve error:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve donors from database.' });
   }
 });
 
 // Query 4 Implementation: Public Donor Directory View (Data Masking)
-// Never exposes phone, email, full address, or medical history notes
-router.get('/public-directory', async (req, res) => {
+// Reads directly from MySQL View: vw_public_donor_directory
+const handlePublicDirectory = async (req, res) => {
   try {
-    const { blood_group } = req.query;
-    let directory = db.dbStore.donors
-      .filter((d) => d.availability_status !== 'INACTIVE')
-      .map((d) => {
-        const person = db.dbStore.persons.find((p) => p.person_id === d.person_id);
-        const approvedName = person ? `${person.first_name.charAt(0)}. ${person.last_name}` : 'Anonymous Donor';
-        return {
-          donor_id: d.donor_id,
-          approved_display_name: approvedName,
-          gender: person ? person.gender : 'OTHER',
-          city: person ? person.city : 'N/A',
-          state: person ? person.state : 'N/A',
-          blood_group: d.blood_group,
-          donor_type: d.donor_type,
-          availability_status: d.availability_status,
-          registration_date: d.registration_date,
-        };
-      });
+    const { blood_group, city } = req.query;
+    const conditions = ['1=1'];
+    const params = [];
 
     if (blood_group) {
-      directory = directory.filter((d) => d.blood_group === blood_group);
+      conditions.push('blood_group = ?');
+      params.push(blood_group);
     }
+    if (city) {
+      conditions.push('city = ?');
+      params.push(city);
+    }
+
+    const sql = `
+      SELECT * 
+      FROM vw_public_donor_directory
+      WHERE ${conditions.join(' AND ')}
+      LIMIT 100
+    `;
+    const directory = await db.query(sql, params);
 
     res.json({
       success: true,
+      count: directory.length,
       view_name: 'vw_public_donor_directory',
-      security_note: 'Confidential personal identifiers (phone, email, full address, medical history) are strictly masked.',
+      directory,
       donors: directory,
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to fetch public donor directory.' });
+    console.error('Public directory error:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve donor directory from database view.' });
   }
-});
+};
 
-// Get single donor details and complete history (RBAC protected)
+router.get('/directory', handlePublicDirectory);
+router.get('/public-directory', handlePublicDirectory);
+
+// Get single donor with full history
 router.get('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'), async (req, res) => {
   try {
     const donorId = parseInt(req.params.id, 10);
-    const donor = db.dbStore.donors.find((d) => d.donor_id === donorId);
-    if (!donor) {
+
+    const donorSql = `
+      SELECT 
+        d.*,
+        CONCAT(p.first_name, ' ', p.last_name) AS name,
+        p.first_name,
+        p.last_name,
+        p.date_of_birth,
+        p.gender,
+        p.phone,
+        p.email,
+        p.address,
+        p.city,
+        p.state,
+        p.pincode
+      FROM Donor d
+      JOIN Person p ON d.person_id = p.person_id
+      WHERE d.donor_id = ?
+    `;
+    const donorRows = await db.query(donorSql, [donorId]);
+    if (donorRows.length === 0) {
       return res.status(404).json({ success: false, message: 'Donor not found.' });
     }
 
-    // Role check: DONOR can only view their own detailed history
-    if (req.user.role === 'DONOR') {
-      const isOwner = (req.user.donor_id && req.user.donor_id === donorId) || (req.user.person_id && req.user.person_id === donor.person_id);
-      if (!isOwner) {
-        return res.status(403).json({
-          success: false,
-          message: 'Forbidden: Donors are only authorized to view their own profile records.',
-        });
-      }
-    }
+    const donor = donorRows[0];
 
-    const person = db.dbStore.persons.find((p) => p.person_id === donor.person_id);
-    const donations = db.dbStore.donations
-      .filter((dn) => dn.donor_id === donorId)
-      .map((dn) => {
-        const camp = dn.donation_camp_id ? db.dbStore.camps.find((c) => c.camp_id === dn.donation_camp_id) : null;
-        const hosp = db.dbStore.hospitals.find((h) => h.hospital_id === dn.hospital_id);
-        const units = db.dbStore.bloodUnits.filter((u) => u.donation_id === dn.donation_id);
-        return {
-          ...dn,
-          camp_name: camp ? camp.camp_name : 'In-Hospital Direct Collection',
-          hospital_name: hosp ? hosp.hospital_name : 'Hospital',
-          units_generated: units.length,
-        };
-      });
+    // Donations history
+    const donationsSql = `
+      SELECT bd.*, h.hospital_name, c.camp_name
+      FROM BloodDonation bd
+      LEFT JOIN Hospital h ON bd.hospital_id = h.hospital_id
+      LEFT JOIN DonationCamp c ON bd.donation_camp_id = c.camp_id
+      WHERE bd.donor_id = ?
+      ORDER BY bd.donation_date DESC
+    `;
+    const donations = await db.query(donationsSql, [donorId]);
 
-    const organPledges = db.dbStore.organDonations.filter((od) => od.donor_id === donorId);
+    // Organ donations
+    const organDonationsSql = `
+      SELECT * 
+      FROM OrganDonation
+      WHERE donor_id = ?
+      ORDER BY registration_date DESC
+    `;
+    const organDonations = await db.query(organDonationsSql, [donorId]);
 
     res.json({
       success: true,
       donor: {
         ...donor,
-        first_name: person ? person.first_name : '',
-        last_name: person ? person.last_name : '',
-        gender: person ? person.gender : '',
-        phone: person ? person.phone : '',
-        email: person ? person.email : '',
-        address: person ? person.address : '',
-        city: person ? person.city : '',
-        state: person ? person.state : '',
-        pincode: person ? person.pincode : '',
         donations,
-        organPledges,
+        organDonations,
       },
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to fetch donor details.' });
+    console.error('Donor detail error:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve donor details.' });
   }
 });
 
-// Register new donor (Handles Person Supertype and Donor Subtype)
-router.post('/', async (req, res) => {
+// Register new donor
+router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+  const conn = await db.getConnection();
+  if (!conn) {
+    return res.status(500).json({ success: false, message: 'Database connection unavailable.' });
+  }
+
   try {
     const {
       first_name,
@@ -158,7 +242,8 @@ router.post('/', async (req, res) => {
       state,
       pincode,
       blood_group,
-      donor_type,
+      donor_type = 'BLOOD',
+      availability_status = 'AVAILABLE',
       medical_history_notes,
     } = req.body;
 
@@ -169,111 +254,187 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // 1. Check if Person already exists by phone or email
-    let person = db.dbStore.persons.find((p) => p.phone === phone || (email && p.email === email));
+    await conn.query('START TRANSACTION');
+
+    // 1. Check or insert Person
+    const [existingPerson] = await conn.query('SELECT person_id FROM Person WHERE phone = ?', [phone]);
     let personId;
 
-    if (!person) {
-      personId = db.dbStore.persons.length > 0 ? Math.max(...db.dbStore.persons.map((p) => p.person_id)) + 1 : 1;
-      person = {
-        person_id: personId,
+    if (existingPerson.length > 0) {
+      personId = existingPerson[0].person_id;
+      // Check if already registered as donor
+      const [existingDonor] = await conn.query('SELECT donor_id FROM Donor WHERE person_id = ?', [personId]);
+      if (existingDonor.length > 0) {
+        await conn.query('ROLLBACK');
+        return res.status(409).json({ success: false, message: 'This person is already registered as a donor.' });
+      }
+    } else {
+      const personInsertSql = `
+        INSERT INTO Person 
+        (first_name, last_name, date_of_birth, gender, phone, email, address, city, state, pincode, blood_group, emergency_contact_name, emergency_contact_phone)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      const [personResult] = await conn.query(personInsertSql, [
         first_name,
         last_name,
-        date_of_birth: date_of_birth || '1995-01-01',
-        gender: gender || 'OTHER',
+        date_of_birth || '1995-05-15',
+        gender || 'OTHER',
         phone,
-        email: email || `donor_${personId}@lifelink.network`,
-        address: address || 'City Center',
-        city: city || 'New Delhi',
-        state: state || 'Delhi',
-        pincode: pincode || '110001',
+        email || `donor_${Date.now()}@lifelink.network`,
+        address || 'City Center',
+        city || 'Delhi',
+        state || 'Delhi',
+        pincode || '110001',
         blood_group,
-        created_at: new Date().toISOString(),
-      };
-      db.dbStore.persons.push(person);
-    } else {
-      personId = person.person_id;
-      // Check if already registered as donor
-      const existingDonor = db.dbStore.donors.find((d) => d.person_id === personId);
-      if (existingDonor) {
-        return res.status(409).json({
-          success: false,
-          message: `Person with phone ${phone} is already registered as Donor ID ${existingDonor.donor_id}.`,
-        });
-      }
+        'Self',
+        phone,
+      ]);
+      personId = personResult.insertId;
     }
 
-    // 2. Insert Donor Subtype
-    const newDonorId = db.dbStore.donors.length > 0 ? Math.max(...db.dbStore.donors.map((d) => d.donor_id)) + 1 : 1;
-    const newDonor = {
-      donor_id: newDonorId,
-      person_id: personId,
-      donor_type: donor_type || 'BLOOD',
+    // 2. Insert Donor
+    const donorInsertSql = `
+      INSERT INTO Donor 
+      (person_id, donor_type, blood_group, registration_date, availability_status, medical_history_notes)
+      VALUES (?, ?, ?, CURDATE(), ?, ?)
+    `;
+    const [donorResult] = await conn.query(donorInsertSql, [
+      personId,
+      donor_type,
       blood_group,
-      registration_date: new Date().toISOString().split('T')[0],
-      availability_status: 'AVAILABLE',
-      last_donation_date: null,
-      deferral_reason: null,
-      medical_history_notes: medical_history_notes || 'Voluntary donor self-registration.',
-    };
-    db.dbStore.donors.push(newDonor);
+      availability_status,
+      medical_history_notes || 'Voluntary donor registration.',
+    ]);
+
+    await conn.query('COMMIT');
 
     res.status(201).json({
       success: true,
-      donor_id: newDonorId,
-      message: `Donor registered successfully (Donor ID: ${newDonorId}, Person ID: ${personId}).`,
-      donor: {
-        ...newDonor,
-        first_name: person.first_name,
-        last_name: person.last_name,
-      },
+      donor_id: donorResult.insertId,
+      message: `Donor registered successfully (Donor ID: ${donorResult.insertId}).`,
     });
   } catch (err) {
-    console.error('Donor registration error:', err);
-    res.status(500).json({ success: false, message: 'Failed to register donor.' });
+    await conn.query('ROLLBACK');
+    console.error('Donor register error:', err);
+    res.status(500).json({ success: false, message: `Failed to register donor: ${err.message}` });
+  } finally {
+    conn.release();
   }
 });
 
-// Update Donor Information
-router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'), async (req, res) => {
+// Update donor availability, medical notes, or contact info
+router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+  const conn = await db.getConnection();
+  if (!conn) {
+    return res.status(500).json({ success: false, message: 'Database connection unavailable.' });
+  }
+
   try {
     const donorId = parseInt(req.params.id, 10);
-    const donor = db.dbStore.donors.find((d) => d.donor_id === donorId);
-    if (!donor) {
+    const { donor_type, availability_status, deferral_reason, medical_history_notes, phone, email, city } = req.body;
+
+    const [dRows] = await conn.query('SELECT * FROM Donor WHERE donor_id = ?', [donorId]);
+    if (dRows.length === 0) {
       return res.status(404).json({ success: false, message: 'Donor not found.' });
     }
+    const currentDonor = dRows[0];
 
-    // Role check: DONOR can only update their own profile
-    if (req.user.role === 'DONOR') {
-      const isOwner = (req.user.donor_id && req.user.donor_id === donorId) || (req.user.person_id && req.user.person_id === donor.person_id);
-      if (!isOwner) {
-        return res.status(403).json({
-          success: false,
-          message: 'Forbidden: Donors are only authorized to update their own profile records.',
-        });
-      }
+    await conn.query('START TRANSACTION');
+
+    const updateDonorSql = `
+      UPDATE Donor 
+      SET 
+        donor_type = COALESCE(?, donor_type),
+        availability_status = COALESCE(?, availability_status),
+        deferral_reason = ?,
+        medical_history_notes = COALESCE(?, medical_history_notes)
+      WHERE donor_id = ?
+    `;
+    await conn.query(updateDonorSql, [
+      donor_type || null,
+      availability_status || null,
+      deferral_reason !== undefined ? deferral_reason : currentDonor.deferral_reason,
+      medical_history_notes || null,
+      donorId,
+    ]);
+
+    if (phone || email || city) {
+      const updatePersonSql = `
+        UPDATE Person 
+        SET 
+          phone = COALESCE(?, phone),
+          email = COALESCE(?, email),
+          city = COALESCE(?, city)
+        WHERE person_id = ?
+      `;
+      await conn.query(updatePersonSql, [phone || null, email || null, city || null, currentDonor.person_id]);
     }
 
-    const { availability_status, deferral_reason, medical_history_notes, phone, email, address, city } = req.body;
+    await conn.query('COMMIT');
 
-    if (availability_status) donor.availability_status = availability_status;
-    if (deferral_reason !== undefined) donor.deferral_reason = deferral_reason;
-    if (medical_history_notes !== undefined) donor.medical_history_notes = medical_history_notes;
-
-    // Update person demographic details if provided
-    const person = db.dbStore.persons.find((p) => p.person_id === donor.person_id);
-    if (person) {
-      if (phone) person.phone = phone;
-      if (email) person.email = email;
-      if (address) person.address = address;
-      if (city) person.city = city;
-    }
-
-    res.json({ success: true, donor, message: 'Donor information updated successfully.' });
+    res.json({
+      success: true,
+      message: `Donor ${donorId} updated successfully.`,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to update donor information.' });
+    await conn.query('ROLLBACK');
+    console.error('Donor update error:', err);
+    res.status(500).json({ success: false, message: `Failed to update donor: ${err.message}` });
+  } finally {
+    conn.release();
+  }
+});
+
+// Delete donor with referential integrity check
+router.delete('/:id', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
+  const conn = await db.getConnection();
+  if (!conn) {
+    return res.status(500).json({ success: false, message: 'Database connection unavailable.' });
+  }
+
+  try {
+    const donorId = parseInt(req.params.id, 10);
+
+    const [donations] = await conn.query('SELECT COUNT(*) AS c FROM BloodDonation WHERE donor_id = ?', [donorId]);
+    const [units] = await conn.query('SELECT COUNT(*) AS c FROM BloodUnit WHERE donor_id = ?', [donorId]);
+    const [organs] = await conn.query('SELECT COUNT(*) AS c FROM OrganDonation WHERE donor_id = ?', [donorId]);
+
+    if (donations[0].c > 0 || units[0].c > 0 || organs[0].c > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Referential Integrity: Donor cannot be deleted because ${donations[0].c} blood donation(s), ${units[0].c} blood unit(s), or ${organs[0].c} organ donation(s) reference this record.`,
+      });
+    }
+
+    const [dRows] = await conn.query('SELECT person_id FROM Donor WHERE donor_id = ?', [donorId]);
+    if (dRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Donor not found.' });
+    }
+    const personId = dRows[0].person_id;
+
+    await conn.query('START TRANSACTION');
+    await conn.query('DELETE FROM Donor WHERE donor_id = ?', [donorId]);
+
+    const [patientCheck] = await conn.query('SELECT COUNT(*) AS c FROM Patient WHERE person_id = ?', [personId]);
+    const [staffCheck] = await conn.query('SELECT COUNT(*) AS c FROM Staff WHERE person_id = ?', [personId]);
+
+    if (patientCheck[0].c === 0 && staffCheck[0].c === 0) {
+      await conn.query('DELETE FROM Person WHERE person_id = ?', [personId]);
+    }
+
+    await conn.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: `Donor ${donorId} deleted successfully.`,
+    });
+  } catch (err) {
+    await conn.query('ROLLBACK');
+    console.error('Donor delete error:', err);
+    res.status(500).json({ success: false, message: `Failed to delete donor: ${err.message}` });
+  } finally {
+    conn.release();
   }
 });
 
 module.exports = router;
-

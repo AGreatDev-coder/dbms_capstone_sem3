@@ -18,6 +18,7 @@ const bloodRequestRoutes = require('./routes/bloodRequest.routes');
 const organRoutes = require('./routes/organ.routes');
 const campRoutes = require('./routes/camp.routes');
 const sqlLabRoutes = require('./routes/sqlLab.routes');
+const dbmsLabRoutes = require('./routes/dbmsLab.routes');
 const db = require('./config/db');
 
 const app = express();
@@ -54,6 +55,7 @@ app.use('/api/blood-requests', bloodRequestRoutes);
 app.use('/api/organ', organRoutes);
 app.use('/api/camps', campRoutes);
 app.use('/api/sql-lab', sqlLabRoutes);
+app.use('/api/dbms-lab', dbmsLabRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

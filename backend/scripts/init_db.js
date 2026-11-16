@@ -91,7 +91,15 @@ async function initDatabase() {
 
     await executeSqlFile(connection, seedPath, 'Seed data');
 
+    // Also initialize College Demo Schema for the interactive DBMS Learning Lab
+    const collegeSchemaPath = path.join(__dirname, '..', '..', 'database', 'college_demo_schema.sql');
+    if (fs.existsSync(collegeSchemaPath)) {
+      console.log(`Reading college demo schema from: ${collegeSchemaPath}`);
+      await executeSqlFile(connection, collegeSchemaPath, 'DBMS Learning Lab Demo Schema');
+    }
+
     const [hospitals] = await connection.query('SELECT COUNT(*) AS count FROM lifelink_db.Hospital');
+    const [patients] = await connection.query('SELECT COUNT(*) AS count FROM lifelink_db.Patient');
     const [donors] = await connection.query('SELECT COUNT(*) AS count FROM lifelink_db.Donor');
     const [units] = await connection.query('SELECT COUNT(*) AS count FROM lifelink_db.BloodUnit');
     const [requests] = await connection.query('SELECT COUNT(*) AS count FROM lifelink_db.BloodRequest');
@@ -99,6 +107,7 @@ async function initDatabase() {
 
     console.log('\n--- Database Verification Summary ---');
     console.log(`Hospitals:       ${hospitals[0].count}`);
+    console.log(`Patients:        ${patients[0].count}`);
     console.log(`Donors:          ${donors[0].count}`);
     console.log(`Blood Units:     ${units[0].count}`);
     console.log(`Blood Requests:  ${requests[0].count}`);

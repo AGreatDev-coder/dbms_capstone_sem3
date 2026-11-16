@@ -1,6 +1,6 @@
 /**
- * Hospital & Ward Management Routes (Module 2)
- * Manages Hospitals, Wards, Bed Occupancy, and Hospital Staff hierarchy
+ * Hospital Management Routes (Module 2)
+ * Connected directly to MySQL 8.0 (InnoDB) with Wards, Staff Hierarchy (Self-Join)
  */
 
 const express = require('express');
@@ -8,185 +8,243 @@ const router = express.Router();
 const db = require('../config/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
-// Get all hospitals with bed capacity statistics
+// Get all hospitals with aggregate metrics
 router.get('/', async (req, res) => {
-  try {
-    const hospitals = db.dbStore.hospitals.map((h) => {
-      const wards = db.dbStore.wards.filter((w) => w.hospital_id === h.hospital_id);
-      const staff = db.dbStore.staff.filter((s) => s.hospital_id === h.hospital_id);
-      const totalBeds = wards.reduce((sum, w) => sum + w.total_beds, 0);
-      const occupiedBeds = wards.reduce((sum, w) => sum + w.occupied_beds, 0);
-      const availableUnits = db.dbStore.bloodUnits.filter(
-        (u) => u.hospital_id === h.hospital_id && u.storage_status === 'AVAILABLE'
-      ).length;
-
-      return {
-        ...h,
-        ward_count: wards.length,
-        staff_count: staff.length,
-        total_beds: totalBeds,
-        occupied_beds: occupiedBeds,
-        occupancy_rate: totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0,
-        available_units: availableUnits,
-      };
-    });
-
-    res.json({ success: true, hospitals });
-  } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to retrieve hospitals.' });
-  }
-});
-
-// Query 6 Implementation: Hospital Staff Hierarchy (Self-Join)
-router.get('/staff-hierarchy', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   try {
     const sql = `
       SELECT 
-        subordinate.staff_id AS employee_staff_id,
-        CONCAT(sub_p.first_name, ' ', sub_p.last_name) AS employee_name,
-        subordinate.job_title AS employee_title,
-        subordinate.department AS department,
+        h.hospital_id,
         h.hospital_name,
-        IFNULL(CONCAT(sup_p.first_name, ' ', sup_p.last_name), 'Top Hospital Executive / Self-Directed') AS supervisor_name,
-        IFNULL(supervisor.job_title, 'N/A') AS supervisor_title
-      FROM Staff subordinate
-      INNER JOIN Person sub_p ON subordinate.person_id = sub_p.person_id
-      INNER JOIN Hospital h ON subordinate.hospital_id = h.hospital_id
-      LEFT JOIN Staff supervisor ON subordinate.supervisor_staff_id = supervisor.staff_id
-      LEFT JOIN Person sup_p ON supervisor.person_id = sup_p.person_id
-      ORDER BY h.hospital_name, subordinate.supervisor_staff_id;
+        h.license_number,
+        h.address,
+        h.city,
+        h.state,
+        h.pincode,
+        h.phone,
+        h.email,
+        h.emergency_helpline,
+        h.established_year,
+        h.is_active,
+        COUNT(DISTINCT w.ward_id) AS ward_count,
+        COUNT(DISTINCT s.staff_id) AS staff_count,
+        COALESCE(SUM(w.total_beds), 0) AS total_capacity,
+        COALESCE(SUM(w.occupied_beds), 0) AS total_occupied
+      FROM Hospital h
+      LEFT JOIN Ward w ON h.hospital_id = w.hospital_id
+      LEFT JOIN Staff s ON h.hospital_id = s.hospital_id
+      GROUP BY h.hospital_id
+      ORDER BY h.hospital_id ASC
     `;
-    const rows = await db.query(sql);
-    res.json({ success: true, rows });
+    const hospitals = await db.query(sql);
+
+    res.json({
+      success: true,
+      count: hospitals.length,
+      hospitals,
+    });
   } catch (err) {
+    console.error('Hospital list error:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve hospitals from database.' });
+  }
+});
+
+// Staff Hierarchy Tree using SQL Self-Join on Staff (supervisor_staff_id)
+router.get('/staff-hierarchy', async (req, res) => {
+  try {
+    const { hospital_id } = req.query;
+    const conditions = ['s.is_active = TRUE'];
+    const params = [];
+
+    if (hospital_id) {
+      conditions.push('s.hospital_id = ?');
+      params.push(parseInt(hospital_id, 10));
+    }
+
+    const sql = `
+      SELECT 
+        s.staff_id,
+        s.hospital_id,
+        s.ward_id,
+        s.supervisor_staff_id,
+        s.job_title,
+        s.department,
+        s.system_role,
+        s.hire_date,
+        s.is_active,
+        CONCAT(p.first_name, ' ', p.last_name) AS name,
+        p.first_name,
+        p.last_name,
+        p.email,
+        p.phone,
+        h.hospital_name,
+        COALESCE(w.ward_name, 'Hospital Wide') AS ward_name,
+        CONCAT(sp.first_name, ' ', sp.last_name) AS supervisor_name,
+        sup.job_title AS supervisor_title
+      FROM Staff s
+      JOIN Person p ON s.person_id = p.person_id
+      JOIN Hospital h ON s.hospital_id = h.hospital_id
+      LEFT JOIN Ward w ON s.ward_id = w.ward_id
+      LEFT JOIN Staff sup ON s.supervisor_staff_id = sup.staff_id
+      LEFT JOIN Person sp ON sup.person_id = sp.person_id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY s.hospital_id, s.supervisor_staff_id IS NULL DESC, s.staff_id ASC
+    `;
+
+    const staffList = await db.query(sql, params);
+
+    res.json({
+      success: true,
+      count: staffList.length,
+      staff: staffList,
+      rows: staffList,
+      explanation: 'Computed using SQL Self-Join on Staff table (Staff s LEFT JOIN Staff sup ON s.supervisor_staff_id = sup.staff_id)',
+    });
+  } catch (err) {
+    console.error('Staff hierarchy error:', err);
     res.status(500).json({ success: false, message: 'Failed to retrieve staff hierarchy.' });
   }
 });
 
-// Get hospital details with wards and staff
+// Get single hospital with wards and staff count
 router.get('/:id', async (req, res) => {
   try {
-    const hospId = parseInt(req.params.id, 10);
-    const hospital = db.dbStore.hospitals.find((h) => h.hospital_id === hospId);
-    if (!hospital) {
+    const hospitalId = parseInt(req.params.id, 10);
+    const sql = 'SELECT * FROM Hospital WHERE hospital_id = ?';
+    const rows = await db.query(sql, [hospitalId]);
+
+    if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Hospital not found.' });
     }
 
-    const wards = db.dbStore.wards.filter((w) => w.hospital_id === hospId);
-    const staffList = db.dbStore.staff
-      .filter((s) => s.hospital_id === hospId)
-      .map((s) => {
-        const p = db.dbStore.persons.find((pr) => pr.person_id === s.person_id);
-        const supervisor = s.supervisor_staff_id ? db.dbStore.staff.find((sp) => sp.staff_id === s.supervisor_staff_id) : null;
-        const supPerson = supervisor ? db.dbStore.persons.find((pr) => pr.person_id === supervisor.person_id) : null;
-        return {
-          ...s,
-          name: p ? `${p.first_name} ${p.last_name}` : 'Unknown',
-          email: p ? p.email : '',
-          phone: p ? p.phone : '',
-          supervisor_name: supPerson ? `${supPerson.first_name} ${supPerson.last_name}` : 'Executive / Direct Head',
-        };
-      });
+    const hospital = rows[0];
+    const wards = await db.query('SELECT * FROM Ward WHERE hospital_id = ? ORDER BY floor_number, ward_name', [hospitalId]);
 
     res.json({
       success: true,
       hospital: {
         ...hospital,
         wards,
-        staff: staffList,
       },
     });
   } catch (err) {
+    console.error('Hospital detail error:', err);
     res.status(500).json({ success: false, message: 'Failed to retrieve hospital details.' });
   }
 });
 
-// Add new hospital
-router.post('/', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
-  try {
-    const { hospital_name, license_number, address, city, state, pincode, contact_phone, contact_email, emergency_helpline, established_year } = req.body;
-
-    if (!hospital_name || !license_number || !contact_email) {
-      return res.status(400).json({ success: false, message: 'Required fields: hospital_name, license_number, contact_email.' });
-    }
-
-    const newId = db.dbStore.hospitals.length > 0 ? Math.max(...db.dbStore.hospitals.map((h) => h.hospital_id)) + 1 : 1;
-    const newHospital = {
-      hospital_id: newId,
-      hospital_name,
-      license_number,
-      address: address || '',
-      city: city || '',
-      state: state || '',
-      pincode: pincode || '',
-      contact_phone: contact_phone || '',
-      contact_email,
-      emergency_helpline: emergency_helpline || contact_phone || '',
-      established_year: parseInt(established_year || new Date().getFullYear(), 10),
-      is_active: true,
-    };
-
-    db.dbStore.hospitals.push(newHospital);
-    res.status(201).json({ success: true, hospital: newHospital, message: 'Hospital created successfully.' });
-  } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to create hospital.' });
-  }
-});
-
-// Update hospital
-router.put('/:id', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
-  try {
-    const hospId = parseInt(req.params.id, 10);
-    const hospital = db.dbStore.hospitals.find((h) => h.hospital_id === hospId);
-    if (!hospital) {
-      return res.status(404).json({ success: false, message: 'Hospital not found.' });
-    }
-
-    Object.assign(hospital, req.body);
-    res.json({ success: true, hospital, message: 'Hospital updated successfully.' });
-  } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to update hospital.' });
-  }
-});
-
-// Get wards for a hospital
+// Get wards for a specific hospital
 router.get('/:id/wards', async (req, res) => {
   try {
-    const hospId = parseInt(req.params.id, 10);
-    const wards = db.dbStore.wards.filter((w) => w.hospital_id === hospId);
-    res.json({ success: true, wards });
+    const hospitalId = parseInt(req.params.id, 10);
+    const sql = `
+      SELECT 
+        w.*,
+        (w.total_beds - w.occupied_beds) AS available_beds,
+        ROUND((w.occupied_beds / w.total_beds) * 100, 1) AS occupancy_rate
+      FROM Ward w
+      WHERE w.hospital_id = ?
+      ORDER BY w.floor_number, w.ward_name
+    `;
+    const wards = await db.query(sql, [hospitalId]);
+
+    res.json({
+      success: true,
+      count: wards.length,
+      wards,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to fetch wards.' });
+    console.error('Wards retrieve error:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve wards.' });
   }
 });
 
-// Add ward to hospital
-router.post('/:id/wards', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+// Create new hospital
+router.post('/', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
   try {
-    const hospId = parseInt(req.params.id, 10);
-    const { ward_name, ward_type, floor_number, total_beds } = req.body;
+    const {
+      hospital_name,
+      license_number,
+      address,
+      city,
+      state,
+      pincode,
+      phone,
+      email,
+      emergency_helpline,
+      established_year,
+    } = req.body;
 
-    if (!ward_name || !ward_type || !total_beds) {
-      return res.status(400).json({ success: false, message: 'Ward name, type, and total beds are required.' });
+    if (!hospital_name || !license_number || !city || !phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Hospital name, license number, city, and phone are required.',
+      });
     }
 
-    const newId = db.dbStore.wards.length > 0 ? Math.max(...db.dbStore.wards.map((w) => w.ward_id)) + 1 : 1;
-    const newWard = {
-      ward_id: newId,
-      hospital_id: hospId,
+    const sql = `
+      INSERT INTO Hospital 
+      (hospital_name, license_number, address, city, state, pincode, phone, email, emergency_helpline, established_year)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    const result = await db.query(sql, [
+      hospital_name,
+      license_number,
+      address || 'Medical Center Way',
+      city,
+      state || 'State',
+      pincode || '110001',
+      phone,
+      email || `${hospital_name.toLowerCase().replace(/\s+/g, '')}@hospital.org`,
+      emergency_helpline || phone,
+      established_year ? parseInt(established_year, 10) : 2010,
+    ]);
+
+    res.status(201).json({
+      success: true,
+      hospital_id: result.insertId,
+      message: `Hospital ${hospital_name} registered successfully.`,
+    });
+  } catch (err) {
+    console.error('Create hospital error:', err);
+    res.status(500).json({ success: false, message: `Failed to create hospital: ${err.message}` });
+  }
+});
+
+// Create new ward for hospital
+router.post('/:id/wards', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+  try {
+    const hospitalId = parseInt(req.params.id, 10);
+    const { ward_name, ward_type, floor_number, total_beds } = req.body;
+
+    if (!ward_name || !ward_type || !floor_number || !total_beds) {
+      return res.status(400).json({
+        success: false,
+        message: 'Ward name, ward type, floor number, and total beds are required.',
+      });
+    }
+
+    const sql = `
+      INSERT INTO Ward 
+      (hospital_id, ward_name, ward_type, floor_number, total_beds, occupied_beds)
+      VALUES (?, ?, ?, ?, ?, 0)
+    `;
+    const result = await db.query(sql, [
+      hospitalId,
       ward_name,
       ward_type,
-      floor_number: parseInt(floor_number || 1, 10),
-      total_beds: parseInt(total_beds, 10),
-      occupied_beds: 0,
-    };
+      parseInt(floor_number, 10),
+      parseInt(total_beds, 10),
+    ]);
 
-    db.dbStore.wards.push(newWard);
-    res.status(201).json({ success: true, ward: newWard, message: 'Ward added successfully.' });
+    res.status(201).json({
+      success: true,
+      ward_id: result.insertId,
+      message: `Ward ${ward_name} created successfully.`,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to add ward.' });
+    console.error('Create ward error:', err);
+    res.status(500).json({ success: false, message: `Failed to create ward: ${err.message}` });
   }
 });
 
 module.exports = router;
-

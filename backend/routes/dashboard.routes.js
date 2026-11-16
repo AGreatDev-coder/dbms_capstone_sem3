@@ -1,65 +1,62 @@
 /**
  * Dashboard & Analytics Routes (Module 1)
- * Computes live KPIs, blood inventory distribution, urgency breakdown, and alerts
+ * Connected directly to MySQL 8.0 (InnoDB) with Live Aggregate Metrics and Analytics Charts
  */
 
 const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 
+// Live KPI Metrics
 router.get('/metrics', async (req, res) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
-    const sevenDaysLater = new Date();
-    sevenDaysLater.setDate(new Date().getDate() + 7);
-    const sevenDaysStr = sevenDaysLater.toISOString().split('T')[0];
+    const [patientCount] = await db.query('SELECT COUNT(*) AS c FROM Patient');
+    const [donorCount] = await db.query('SELECT COUNT(*) AS c FROM Donor');
+    const [hospitalCount] = await db.query('SELECT COUNT(*) AS c FROM Hospital');
+    const [staffCount] = await db.query('SELECT COUNT(*) AS c FROM Staff');
 
-    // Total Donors
-    const totalDonors = db.dbStore.donors.length;
+    const [availUnits] = await db.query(
+      "SELECT COUNT(*) AS c FROM BloodUnit WHERE storage_status = 'AVAILABLE' AND expiry_date >= CURDATE()"
+    );
 
-    // Total Patients
-    const totalPatients = db.dbStore.patients.length;
+    const [pendingRequests] = await db.query(
+      "SELECT COUNT(*) AS c FROM BloodRequest WHERE request_status IN ('PENDING', 'PARTIALLY_FULFILLED')"
+    );
 
-    // Total Hospitals
-    const totalHospitals = db.dbStore.hospitals.length;
+    const [urgentRequests] = await db.query(
+      "SELECT COUNT(*) AS c FROM BloodRequest WHERE request_status IN ('PENDING', 'PARTIALLY_FULFILLED') AND urgency_level IN ('CRITICAL', 'HIGH')"
+    );
 
-    // Available Blood Units (Valid, not expired)
-    const availableBloodUnits = db.dbStore.bloodUnits.filter(
-      (u) => u.storage_status === 'AVAILABLE' && u.expiry_date >= today
-    ).length;
+    const [criticalPatients] = await db.query(
+      "SELECT COUNT(*) AS c FROM Patient WHERE medical_status = 'CRITICAL'"
+    );
 
-    // Pending Blood Requests
-    const pendingBloodRequests = db.dbStore.bloodRequests.filter(
-      (r) => r.request_status === 'PENDING' || r.request_status === 'PARTIALLY_FULFILLED'
-    ).length;
+    const [organRequests] = await db.query(
+      "SELECT COUNT(*) AS c FROM OrganRequest WHERE request_status = 'WAITING'"
+    );
 
-    // Urgent Requests (CRITICAL + HIGH)
-    const urgentRequests = db.dbStore.bloodRequests.filter(
-      (r) => (r.urgency_level === 'CRITICAL' || r.urgency_level === 'HIGH') &&
-             (r.request_status === 'PENDING' || r.request_status === 'PARTIALLY_FULFILLED')
-    ).length;
+    const [pendingOrganMatches] = await db.query(
+      "SELECT COUNT(*) AS c FROM OrganMatch WHERE verification_status = 'PENDING_VERIFICATION'"
+    );
 
-    // Organ Donation Requests
-    const organRequests = db.dbStore.organRequests.filter(
-      (r) => r.request_status === 'WAITING' || r.request_status === 'MATCH_PROPOSED'
-    ).length;
-
-    // Expiring Blood Units within next 7 days
-    const expiringBloodUnits = db.dbStore.bloodUnits.filter(
-      (u) => u.storage_status === 'AVAILABLE' && u.expiry_date >= today && u.expiry_date <= sevenDaysStr
-    ).length;
+    const [expiringUnits] = await db.query(
+      "SELECT COUNT(*) AS c FROM BloodUnit WHERE storage_status = 'AVAILABLE' AND expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)"
+    );
 
     res.json({
       success: true,
       metrics: {
-        totalDonors,
-        totalPatients,
-        totalHospitals,
-        availableBloodUnits,
-        pendingBloodRequests,
-        urgentRequests,
-        organRequests,
-        expiringBloodUnits,
+        totalPatients: patientCount[0]?.c || 0,
+        totalDonors: donorCount[0]?.c || 0,
+        totalHospitals: hospitalCount[0]?.c || 0,
+        totalStaff: staffCount[0]?.c || 0,
+        availableBloodUnits: availUnits[0]?.c || 0,
+        pendingBloodRequests: pendingRequests[0]?.c || 0,
+        urgentRequests: urgentRequests[0]?.c || 0,
+        criticalPatients: criticalPatients[0]?.c || 0,
+        organRequests: organRequests[0]?.c || 0,
+        pendingOrganMatches: pendingOrganMatches[0]?.c || 0,
+        expiringBloodUnits: expiringUnits[0]?.c || 0,
       },
       isMySQLConnected: db.isMySQLConnected(),
     });
@@ -69,78 +66,84 @@ router.get('/metrics', async (req, res) => {
   }
 });
 
+// Live Analytics Charts (Database GROUP BY queries)
 router.get('/charts', async (req, res) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
-    const allGroups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+    // 1. Blood Group Inventory vs Registered Donors
+    const bloodGroupSql = `
+      SELECT 
+        bg.blood_group,
+        COUNT(DISTINCT bu.unit_id) AS units,
+        COUNT(DISTINCT d.donor_id) AS donors
+      FROM (
+        SELECT 'A+' AS blood_group UNION SELECT 'A-' UNION SELECT 'B+' UNION SELECT 'B-' UNION SELECT 'AB+' UNION SELECT 'AB-' UNION SELECT 'O+' UNION SELECT 'O-'
+      ) bg
+      LEFT JOIN BloodUnit bu ON bg.blood_group = bu.blood_group AND bu.storage_status = 'AVAILABLE' AND bu.expiry_date >= CURDATE()
+      LEFT JOIN Donor d ON bg.blood_group = d.blood_group
+      GROUP BY bg.blood_group
+      ORDER BY bg.blood_group
+    `;
+    const bloodGroupDistribution = await db.query(bloodGroupSql);
 
-    // 1. Blood Group Distribution (Available units)
-    const bloodGroupDistribution = allGroups.map((bg) => {
-      const units = db.dbStore.bloodUnits.filter(
-        (u) => u.blood_group === bg && u.storage_status === 'AVAILABLE' && u.expiry_date >= today
-      );
-      const donors = db.dbStore.donors.filter((d) => d.blood_group === bg).length;
-      return {
-        blood_group: bg,
-        units: units.length,
-        donors: donors,
-      };
-    });
+    // 2. Request Urgency Distribution
+    const urgencySql = `
+      SELECT 
+        urgency_level AS name,
+        urgency_level AS urgency,
+        COUNT(*) AS count
+      FROM BloodRequest
+      WHERE request_status IN ('PENDING', 'PARTIALLY_FULFILLED')
+      GROUP BY urgency_level
+      ORDER BY FIELD(urgency_level, 'CRITICAL', 'HIGH', 'MEDIUM', 'ROUTINE')
+    `;
+    const requestUrgencyData = await db.query(urgencySql);
 
-    // 2. Request Urgency Breakdown
-    const urgencyCounts = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, ROUTINE: 0 };
-    db.dbStore.bloodRequests.forEach((r) => {
-      if (urgencyCounts[r.urgency_level] !== undefined) {
-        urgencyCounts[r.urgency_level]++;
-      }
-    });
-    const requestUrgencyData = Object.keys(urgencyCounts).map((key) => ({
-      urgency: key,
-      count: urgencyCounts[key],
-    }));
+    // 3. Hospital Inventory Comparison Data
+    const hospitalSql = `
+      SELECT 
+        h.hospital_name,
+        COUNT(CASE WHEN bu.storage_status = 'AVAILABLE' AND bu.expiry_date >= CURDATE() THEN 1 END) AS available,
+        COUNT(CASE WHEN bu.storage_status = 'ALLOCATED' THEN 1 END) AS allocated,
+        COUNT(CASE WHEN bu.storage_status = 'EXPIRED' OR (bu.storage_status = 'AVAILABLE' AND bu.expiry_date < CURDATE()) THEN 1 END) AS expired
+      FROM Hospital h
+      LEFT JOIN BloodUnit bu ON h.hospital_id = bu.hospital_id
+      GROUP BY h.hospital_id, h.hospital_name
+      ORDER BY h.hospital_id ASC
+    `;
+    const hospitalInventoryData = await db.query(hospitalSql);
 
-    // 3. Hospital Inventory Comparison
-    const hospitalInventoryData = db.dbStore.hospitals.map((h) => {
-      const available = db.dbStore.bloodUnits.filter(
-        (u) => u.hospital_id === h.hospital_id && u.storage_status === 'AVAILABLE' && u.expiry_date >= today
-      ).length;
-      const allocated = db.dbStore.bloodUnits.filter(
-        (u) => u.hospital_id === h.hospital_id && u.storage_status === 'ALLOCATED'
-      ).length;
-      const expired = db.dbStore.bloodUnits.filter(
-        (u) => u.hospital_id === h.hospital_id && (u.storage_status === 'EXPIRED' || u.expiry_date < today)
-      ).length;
-
-      return {
-        hospital_name: h.hospital_name.split(' ')[0] + ' ' + (h.hospital_name.split(' ')[1] || ''),
-        full_name: h.hospital_name,
-        available,
-        allocated,
-        expired,
-      };
-    });
-
-    // 4. Recent Allocations Activity
-    const recentAllocations = db.dbStore.bloodAllocations.slice(-5).reverse().map((a) => {
-      const req = db.dbStore.bloodRequests.find((r) => r.request_id === a.request_id);
-      const unit = db.dbStore.bloodUnits.find((u) => u.unit_id === a.unit_id);
-      const staff = db.dbStore.staff.find((s) => s.staff_id === a.allocated_by_staff_id);
-      const staffPerson = staff ? db.dbStore.persons.find((p) => p.person_id === staff.person_id) : null;
-
-      return {
-        allocation_id: a.allocation_id,
-        request_id: a.request_id,
-        unit_id: a.unit_id,
-        blood_group: unit ? unit.blood_group : 'N/A',
-        component_type: unit ? unit.component_type : 'N/A',
-        allocated_date: a.allocated_date,
-        authorized_by: staffPerson ? `${staffPerson.first_name} ${staffPerson.last_name}` : 'Staff Member',
-        status: a.allocation_status,
-      };
-    });
+    // 4. Recent Blood Allocations
+    const recentAllocSql = `
+      SELECT 
+        ba.allocation_id,
+        ba.request_id,
+        ba.unit_id,
+        ba.allocated_date,
+        ba.notes,
+        CONCAT(p.first_name, ' ', p.last_name) AS patient_name,
+        p.blood_group,
+        h.hospital_name,
+        CONCAT('Dr. ', COALESCE(sp.first_name, 'Staff'), ' ', COALESCE(sp.last_name, 'Physician')) AS staff_name
+      FROM BloodAllocation ba
+      JOIN BloodRequest br ON ba.request_id = br.request_id
+      JOIN Patient pt ON br.patient_id = pt.patient_id
+      JOIN Person p ON pt.person_id = p.person_id
+      JOIN Hospital h ON br.hospital_id = h.hospital_id
+      LEFT JOIN Staff s ON ba.allocated_by_staff_id = s.staff_id
+      LEFT JOIN Person sp ON s.person_id = sp.person_id
+      ORDER BY ba.allocated_date DESC
+      LIMIT 5
+    `;
+    const recentAllocations = await db.query(recentAllocSql);
 
     res.json({
       success: true,
+      charts: {
+        bloodGroupDistribution,
+        requestUrgencyData,
+        hospitalInventoryData,
+        recentAllocations,
+      },
       bloodGroupDistribution,
       requestUrgencyData,
       hospitalInventoryData,
@@ -148,9 +151,8 @@ router.get('/charts', async (req, res) => {
     });
   } catch (err) {
     console.error('Dashboard charts error:', err);
-    res.status(500).json({ success: false, message: 'Failed to generate dashboard chart data.' });
+    res.status(500).json({ success: false, message: 'Failed to retrieve dashboard analytics charts.' });
   }
 });
 
 module.exports = router;
-

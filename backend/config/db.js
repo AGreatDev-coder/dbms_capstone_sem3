@@ -68,12 +68,8 @@ initDB();
  */
 async function query(sql, params = []) {
   if (mysqlConnected && pool) {
-    try {
-      const [results] = await pool.query(sql, params);
-      return results;
-    } catch (err) {
-      console.warn('[MySQL Query Error, falling back to relational memory engine]:', err.message);
-    }
+    const [results] = await pool.query(sql, params);
+    return results;
   }
 
   // Relational Memory Query Execution Fallback

@@ -88,6 +88,13 @@ const Dashboard = () => {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => fetchDashboardData()}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 transition-colors shadow-sm"
+            title="Refresh Live Metrics from MySQL"
+          >
+            <span>Refresh Analytics</span>
+          </button>
           {user?.role === 'ADMIN' && (
             <Link
               to="/sql-lab"

@@ -1,6 +1,6 @@
 /**
- * Donation Camp & Aggregation Routes (Module 8 & Query 7)
- * Implements Camp management, CampDonorRegistration junction, and Aggregates with HAVING
+ * Donation Camp Routes (Module 8 & Section 4 Aggregation)
+ * Connected directly to MySQL 8.0 (InnoDB) with Aggregation demonstration
  */
 
 const express = require('express');
@@ -8,169 +8,221 @@ const router = express.Router();
 const db = require('../config/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
-// Get all donation camps with registration and donation stats
+// Get all donation camps with aggregated metrics
 router.get('/', async (req, res) => {
   try {
     const { status, hospital_id } = req.query;
+    const conditions = ['1=1'];
+    const params = [];
 
-    let camps = db.dbStore.camps.map((c) => {
-      const hospital = db.dbStore.hospitals.find((h) => h.hospital_id === c.hospital_id);
-      const registrations = db.dbStore.campRegistrations.filter((r) => r.camp_id === c.camp_id);
-      const attendedCount = registrations.filter((r) => r.attended).length;
-      const donations = db.dbStore.donations.filter((d) => d.donation_camp_id === c.camp_id);
-      const totalUnitsDonated = donations.length;
+    if (status) {
+      conditions.push('c.camp_status = ?');
+      params.push(status);
+    }
+    if (hospital_id) {
+      conditions.push('c.hospital_id = ?');
+      params.push(parseInt(hospital_id, 10));
+    }
 
-      return {
-        ...c,
-        hospital_name: hospital ? hospital.hospital_name : 'Hospital',
-        registered_donors_count: registrations.length,
-        attended_donors_count: attendedCount,
-        total_donations_collected: totalUnitsDonated,
-      };
+    const sql = `
+      SELECT 
+        c.camp_id,
+        c.camp_name,
+        c.organizer,
+        c.hospital_id,
+        c.location,
+        c.city,
+        c.start_date,
+        c.end_date,
+        c.capacity,
+        c.camp_status,
+        c.contact_phone,
+        h.hospital_name,
+        COUNT(DISTINCT cdr.registration_id) AS registered_donors,
+        COUNT(DISTINCT CASE WHEN cdr.attended = TRUE THEN cdr.registration_id END) AS attended_donors,
+        COALESCE(SUM(cdr.units_donated), 0) AS total_units_collected
+      FROM DonationCamp c
+      JOIN Hospital h ON c.hospital_id = h.hospital_id
+      LEFT JOIN CampDonorRegistration cdr ON c.camp_id = cdr.camp_id
+      WHERE ${conditions.join(' AND ')}
+      GROUP BY c.camp_id
+      ORDER BY c.start_date DESC
+    `;
+
+    const camps = await db.query(sql, params);
+
+    res.json({
+      success: true,
+      count: camps.length,
+      camps,
+      aggregation_concept: 'DonationCamp acts as an aggregation root binding hospital organizer, registered donors, and resulting donations.',
     });
-
-    if (status) camps = camps.filter((c) => c.camp_status === status);
-    if (hospital_id) camps = camps.filter((c) => c.hospital_id === parseInt(hospital_id, 10));
-
-    res.json({ success: true, count: camps.length, camps });
   } catch (err) {
+    console.error('Donation camps error:', err);
     res.status(500).json({ success: false, message: 'Failed to retrieve donation camps.' });
   }
 });
 
-// Query 7 Implementation: Aggregate Functions with GROUP BY and HAVING
+// Camp Aggregate Statistics (for Camp Stats tab)
 router.get('/stats', async (req, res) => {
   try {
     const sql = `
       SELECT 
-          dc.camp_id,
-          dc.camp_name,
-          h.hospital_name,
-          COUNT(bd.donation_id) AS total_donations_collected,
-          SUM(bd.quantity_ml) AS total_blood_collected_ml,
-          ROUND(AVG(bd.hemoglobin_level), 2) AS average_donor_hemoglobin,
-          MIN(bd.quantity_ml) AS min_donation_ml,
-          MAX(bd.quantity_ml) AS max_donation_ml
-      FROM DonationCamp dc
-      JOIN Hospital h ON dc.hospital_id = h.hospital_id
-      JOIN BloodDonation bd ON dc.camp_id = bd.donation_camp_id
-      WHERE bd.screening_status = 'PASSED'
-      GROUP BY dc.camp_id, dc.camp_name, h.hospital_name
-      HAVING COUNT(bd.donation_id) >= 2;
+        c.camp_id,
+        c.camp_name,
+        c.location,
+        c.capacity,
+        c.camp_status,
+        h.hospital_name,
+        COUNT(cdr.registration_id) AS total_registrations,
+        COUNT(CASE WHEN cdr.attended = TRUE THEN 1 END) AS attended_count,
+        COALESCE(SUM(cdr.units_donated), 0) AS units_collected,
+        ROUND((COUNT(CASE WHEN cdr.attended = TRUE THEN 1 END) / NULLIF(COUNT(cdr.registration_id), 0)) * 100, 1) AS attendance_rate_pct
+      FROM DonationCamp c
+      JOIN Hospital h ON c.hospital_id = h.hospital_id
+      LEFT JOIN CampDonorRegistration cdr ON c.camp_id = cdr.camp_id
+      GROUP BY c.camp_id, h.hospital_name
+      ORDER BY c.start_date DESC
     `;
-
     const stats = await db.query(sql);
 
     res.json({
       success: true,
-      query_concept: 'Aggregate Functions: COUNT, SUM, AVG, MIN, MAX with GROUP BY and HAVING COUNT() >= 2',
       stats,
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to compute camp statistics.' });
+    console.error('Camp stats error:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve camp statistics.' });
+  }
+});
+
+// Get single camp with registrations
+router.get('/:id', async (req, res) => {
+  try {
+    const campId = parseInt(req.params.id, 10);
+
+    const campSql = `
+      SELECT c.*, h.hospital_name
+      FROM DonationCamp c
+      JOIN Hospital h ON c.hospital_id = h.hospital_id
+      WHERE c.camp_id = ?
+    `;
+    const campRows = await db.query(campSql, [campId]);
+    if (campRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Camp not found.' });
+    }
+
+    const camp = campRows[0];
+
+    const regSql = `
+      SELECT 
+        cdr.registration_id,
+        cdr.camp_id,
+        cdr.donor_id,
+        cdr.registration_time,
+        cdr.attended,
+        cdr.units_donated,
+        CONCAT(p.first_name, ' ', p.last_name) AS donor_name,
+        d.blood_group,
+        p.phone,
+        p.city
+      FROM CampDonorRegistration cdr
+      JOIN Donor d ON cdr.donor_id = d.donor_id
+      JOIN Person p ON d.person_id = p.person_id
+      WHERE cdr.camp_id = ?
+      ORDER BY cdr.registration_time DESC
+    `;
+    const registrations = await db.query(regSql, [campId]);
+
+    res.json({
+      success: true,
+      camp: {
+        ...camp,
+        registrations,
+      },
+    });
+  } catch (err) {
+    console.error('Camp detail error:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve camp details.' });
   }
 });
 
 // Create new donation camp
 router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   try {
-    const { camp_name, organizer, hospital_id, location, city, start_date, end_date, capacity, contact_phone } = req.body;
-
-    if (!camp_name || !organizer || !hospital_id || !start_date || !end_date) {
-      return res.status(400).json({
-        success: false,
-        message: 'camp_name, organizer, hospital_id, start_date, and end_date are required.',
-      });
-    }
-
-    const newId = db.dbStore.camps.length > 0 ? Math.max(...db.dbStore.camps.map((c) => c.camp_id)) + 1 : 1;
-    const newCamp = {
-      camp_id: newId,
+    const {
       camp_name,
       organizer,
-      hospital_id: parseInt(hospital_id, 10),
-      location: location || 'City Hall',
-      city: city || 'New Delhi',
+      hospital_id,
+      location,
+      city,
       start_date,
       end_date,
-      capacity: parseInt(capacity || 200, 10),
-      camp_status: 'SCHEDULED',
-      contact_phone: contact_phone || '+91-11-26588500',
-    };
+      capacity = 100,
+      contact_phone,
+    } = req.body;
 
-    db.dbStore.camps.push(newCamp);
-    res.status(201).json({ success: true, camp: newCamp, message: 'Donation camp created successfully.' });
-  } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to create donation camp.' });
-  }
-});
-
-// Register donor for camp (CampDonorRegistration Junction Table)
-router.post('/:id/register', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'), async (req, res) => {
-  try {
-    const campId = parseInt(req.params.id, 10);
-    const { donor_id } = req.body;
-
-    const camp = db.dbStore.camps.find((c) => c.camp_id === campId);
-    if (!camp) {
-      return res.status(404).json({ success: false, message: 'Donation camp not found.' });
+    if (!camp_name || !organizer || !hospital_id || !location || !city || !start_date || !end_date) {
+      return res.status(400).json({ success: false, message: 'All required camp details must be provided.' });
     }
 
-    const donor = db.dbStore.donors.find((d) => d.donor_id === parseInt(donor_id, 10));
-    if (!donor) {
-      return res.status(404).json({ success: false, message: 'Donor not found.' });
-    }
-
-    // Check duplicate
-    const exists = db.dbStore.campRegistrations.some((r) => r.camp_id === campId && r.donor_id === donor.donor_id);
-    if (exists) {
-      return res.status(409).json({ success: false, message: 'Donor is already registered for this camp.' });
-    }
-
-    const regId = db.dbStore.campRegistrations.length > 0 ? Math.max(...db.dbStore.campRegistrations.map((r) => r.registration_id)) + 1 : 1;
-    const registration = {
-      registration_id: regId,
-      camp_id: campId,
-      donor_id: donor.donor_id,
-      registration_time: new Date().toISOString().replace('T', ' ').substring(0, 19),
-      attended: false,
-      units_donated: 0,
-    };
-
-    db.dbStore.campRegistrations.push(registration);
+    const sql = `
+      INSERT INTO DonationCamp 
+      (camp_name, organizer, hospital_id, location, city, start_date, end_date, capacity, camp_status, contact_phone)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SCHEDULED', ?)
+    `;
+    const result = await db.query(sql, [
+      camp_name,
+      organizer,
+      parseInt(hospital_id, 10),
+      location,
+      city,
+      start_date,
+      end_date,
+      parseInt(capacity, 10),
+      contact_phone || '+91-9811002233',
+    ]);
 
     res.status(201).json({
       success: true,
-      registration,
-      message: `Donor #${donor.donor_id} registered for camp '${camp.camp_name}'.`,
+      camp_id: result.insertId,
+      message: `Donation Camp "${camp_name}" scheduled successfully (Camp ID: ${result.insertId}).`,
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to register donor for camp.' });
+    console.error('Create camp error:', err);
+    res.status(500).json({ success: false, message: `Failed to schedule camp: ${err.message}` });
   }
 });
 
-// Get donors registered for a camp
-router.get('/:id/donors', async (req, res) => {
+// Register donor for camp (M:N junction table CampDonorRegistration)
+router.post('/:id/register', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'), async (req, res) => {
   try {
     const campId = parseInt(req.params.id, 10);
-    const registrations = db.dbStore.campRegistrations
-      .filter((r) => r.camp_id === campId)
-      .map((r) => {
-        const donor = db.dbStore.donors.find((d) => d.donor_id === r.donor_id);
-        const person = donor ? db.dbStore.persons.find((p) => p.person_id === donor.person_id) : null;
-        return {
-          ...r,
-          donor_name: person ? `${person.first_name} ${person.last_name}` : 'Unknown',
-          blood_group: donor ? donor.blood_group : 'O+',
-          phone: person ? person.phone : '',
-        };
-      });
+    const donorId = req.body.donor_id || req.user?.donor_id;
 
-    res.json({ success: true, donors: registrations });
+    if (!donorId) {
+      return res.status(400).json({ success: false, message: 'Donor ID is required for registration.' });
+    }
+
+    const sql = `
+      INSERT INTO CampDonorRegistration 
+      (camp_id, donor_id, registration_time, attended, units_donated)
+      VALUES (?, ?, NOW(), FALSE, 0)
+    `;
+    const result = await db.query(sql, [campId, parseInt(donorId, 10)]);
+
+    res.status(201).json({
+      success: true,
+      registration_id: result.insertId,
+      message: `Donor #${donorId} successfully registered for camp #${campId}.`,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to fetch registered donors.' });
+    if (err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ success: false, message: 'Donor is already registered for this camp.' });
+    }
+    console.error('Register for camp error:', err);
+    res.status(500).json({ success: false, message: `Failed to register for camp: ${err.message}` });
   }
 });
 
 module.exports = router;
-

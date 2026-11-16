@@ -1,6 +1,6 @@
 /**
  * Patient Management Routes (Module 4)
- * Handles Patient registration, hospital/ward assignment, medical status, and requests
+ * Connected directly to MySQL 8.0 (InnoDB) with full CRUD, search, filter, pagination
  */
 
 const express = require('express');
@@ -8,71 +8,173 @@ const router = express.Router();
 const db = require('../config/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
-// Get all patients (RBAC: Authorized Staff / Admin view)
+// Get all patients with search, filtering, sorting, and pagination
 router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   try {
-    const { hospital_id, medical_status, blood_group } = req.query;
+    const {
+      hospital_id,
+      medical_status,
+      blood_group,
+      search,
+      sortBy = 'admission_date',
+      sortOrder = 'DESC',
+      page = 1,
+      limit = 25,
+    } = req.query;
 
-    let patients = db.dbStore.patients.map((pt) => {
-      const person = db.dbStore.persons.find((p) => p.person_id === pt.person_id);
-      const hospital = db.dbStore.hospitals.find((h) => h.hospital_id === pt.hospital_id);
-      const ward = pt.ward_id ? db.dbStore.wards.find((w) => w.ward_id === pt.ward_id) : null;
-      const doctor = pt.attending_doctor_id ? db.dbStore.staff.find((s) => s.staff_id === pt.attending_doctor_id) : null;
-      const docPerson = doctor ? db.dbStore.persons.find((p) => p.person_id === doctor.person_id) : null;
-
-      const activeBloodRequests = db.dbStore.bloodRequests.filter(
-        (r) => r.patient_id === pt.patient_id && (r.request_status === 'PENDING' || r.request_status === 'PARTIALLY_FULFILLED')
-      ).length;
-
-      const activeOrganRequests = db.dbStore.organRequests.filter(
-        (r) => r.patient_id === pt.patient_id && r.request_status === 'WAITING'
-      ).length;
-
-      return {
-        ...pt,
-        name: person ? `${person.first_name} ${person.last_name}` : 'Unknown Patient',
-        first_name: person ? person.first_name : '',
-        last_name: person ? person.last_name : '',
-        gender: person ? person.gender : 'OTHER',
-        date_of_birth: person ? person.date_of_birth : '',
-        phone: person ? person.phone : '',
-        email: person ? person.email : '',
-        blood_group: person ? person.blood_group : 'O+',
-        city: person ? person.city : '',
-        hospital_name: hospital ? hospital.hospital_name : 'Unknown Hospital',
-        ward_name: ward ? `${ward.ward_name} (${ward.ward_type})` : 'Unassigned',
-        attending_doctor_name: docPerson ? `Dr. ${docPerson.first_name} ${docPerson.last_name}` : 'Staff Physician',
-        active_blood_requests: activeBloodRequests,
-        active_organ_requests: activeOrganRequests,
-      };
-    });
+    const conditions = ['1=1'];
+    const params = [];
 
     if (hospital_id) {
-      patients = patients.filter((pt) => pt.hospital_id === parseInt(hospital_id, 10));
+      conditions.push('pt.hospital_id = ?');
+      params.push(parseInt(hospital_id, 10));
     }
     if (medical_status) {
-      patients = patients.filter((pt) => pt.medical_status === medical_status);
+      conditions.push('pt.medical_status = ?');
+      params.push(medical_status);
     }
     if (blood_group) {
-      patients = patients.filter((pt) => pt.blood_group === blood_group);
+      conditions.push('p.blood_group = ?');
+      params.push(blood_group);
+    }
+    if (search && search.trim()) {
+      conditions.push('(p.first_name LIKE ? OR p.last_name LIKE ? OR p.phone LIKE ? OR p.city LIKE ? OR pt.medical_notes LIKE ?)');
+      const pattern = `%${search.trim()}%`;
+      params.push(pattern, pattern, pattern, pattern, pattern);
     }
 
-    res.json({ success: true, count: patients.length, patients });
+    const whereClause = conditions.join(' AND ');
+
+    // Total count for pagination
+    const countSql = `
+      SELECT COUNT(*) AS total
+      FROM Patient pt
+      JOIN Person p ON pt.person_id = p.person_id
+      JOIN Hospital h ON pt.hospital_id = h.hospital_id
+      WHERE ${whereClause}
+    `;
+    const countResult = await db.query(countSql, params);
+    const total = countResult[0]?.total || 0;
+
+    // Sorting whitelist
+    const allowedSortFields = {
+      patient_id: 'pt.patient_id',
+      name: 'p.first_name',
+      admission_date: 'pt.admission_date',
+      medical_status: 'pt.medical_status',
+      hospital_name: 'h.hospital_name',
+      blood_group: 'p.blood_group',
+    };
+    const orderCol = allowedSortFields[sortBy] || 'pt.admission_date';
+    const orderDir = sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+    // Pagination limits
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = limit === 'all' ? 1000 : Math.max(1, parseInt(limit, 10) || 25);
+    const offset = (pageNum - 1) * limitNum;
+
+    const dataSql = `
+      SELECT 
+        pt.patient_id,
+        pt.person_id,
+        pt.hospital_id,
+        pt.ward_id,
+        pt.attending_doctor_id,
+        pt.admission_date,
+        pt.discharge_date,
+        pt.medical_status,
+        pt.medical_notes,
+        CONCAT(p.first_name, ' ', p.last_name) AS name,
+        p.first_name,
+        p.last_name,
+        p.date_of_birth,
+        p.gender,
+        p.phone,
+        p.email,
+        p.address,
+        p.city,
+        p.state,
+        p.pincode,
+        p.blood_group,
+        p.emergency_contact_name,
+        p.emergency_contact_phone,
+        h.hospital_name,
+        h.city AS hospital_city,
+        COALESCE(w.ward_name, 'Unassigned') AS ward_name,
+        COALESCE(w.ward_type, 'N/A') AS ward_type,
+        CONCAT('Dr. ', COALESCE(dp.first_name, 'Staff'), ' ', COALESCE(dp.last_name, 'Physician')) AS attending_doctor_name,
+        (SELECT COUNT(*) FROM BloodRequest br WHERE br.patient_id = pt.patient_id AND br.request_status IN ('PENDING', 'PARTIALLY_FULFILLED')) AS active_blood_requests,
+        (SELECT COUNT(*) FROM OrganRequest orq WHERE orq.patient_id = pt.patient_id AND orq.request_status = 'WAITING') AS active_organ_requests
+      FROM Patient pt
+      JOIN Person p ON pt.person_id = p.person_id
+      JOIN Hospital h ON pt.hospital_id = h.hospital_id
+      LEFT JOIN Ward w ON pt.ward_id = w.ward_id
+      LEFT JOIN Staff d ON pt.attending_doctor_id = d.staff_id
+      LEFT JOIN Person dp ON d.person_id = dp.person_id
+      WHERE ${whereClause}
+      ORDER BY ${orderCol} ${orderDir}
+      LIMIT ? OFFSET ?
+    `;
+
+    const patients = await db.query(dataSql, [...params, limitNum, offset]);
+
+    res.json({
+      success: true,
+      count: total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum),
+      limit: limitNum,
+      patients,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to retrieve patients.' });
+    console.error('Patient retrieve error:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve patients from database.' });
   }
 });
 
-// Get single patient with requests history (RBAC protected)
+// Get single patient with requests history
 router.get('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'PATIENT'), async (req, res) => {
   try {
     const patientId = parseInt(req.params.id, 10);
-    const patient = db.dbStore.patients.find((pt) => pt.patient_id === patientId);
-    if (!patient) {
+
+    const patientSql = `
+      SELECT 
+        pt.*,
+        CONCAT(p.first_name, ' ', p.last_name) AS name,
+        p.first_name,
+        p.last_name,
+        p.date_of_birth,
+        p.gender,
+        p.phone,
+        p.email,
+        p.address,
+        p.city,
+        p.state,
+        p.pincode,
+        p.blood_group,
+        p.emergency_contact_name,
+        p.emergency_contact_phone,
+        h.hospital_name,
+        COALESCE(w.ward_name, 'Unassigned') AS ward_name,
+        w.ward_type,
+        CONCAT('Dr. ', COALESCE(dp.first_name, 'Staff'), ' ', COALESCE(dp.last_name, 'Physician')) AS attending_doctor_name
+      FROM Patient pt
+      JOIN Person p ON pt.person_id = p.person_id
+      JOIN Hospital h ON pt.hospital_id = h.hospital_id
+      LEFT JOIN Ward w ON pt.ward_id = w.ward_id
+      LEFT JOIN Staff d ON pt.attending_doctor_id = d.staff_id
+      LEFT JOIN Person dp ON d.person_id = dp.person_id
+      WHERE pt.patient_id = ?
+    `;
+
+    const patientRows = await db.query(patientSql, [patientId]);
+    if (patientRows.length === 0) {
       return res.status(404).json({ success: false, message: 'Patient not found.' });
     }
 
-    // Role check: PATIENT can only view their own patient profile
+    const patient = patientRows[0];
+
+    // RBAC: PATIENT can only view their own record
     if (req.user.role === 'PATIENT') {
       const isOwner = (req.user.patient_id && req.user.patient_id === patientId) || (req.user.person_id && req.user.person_id === patient.person_id);
       if (!isOwner) {
@@ -83,48 +185,47 @@ router.get('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'PATIENT'
       }
     }
 
-    const person = db.dbStore.persons.find((p) => p.person_id === patient.person_id);
-    const hospital = db.dbStore.hospitals.find((h) => h.hospital_id === patient.hospital_id);
-    const ward = patient.ward_id ? db.dbStore.wards.find((w) => w.ward_id === patient.ward_id) : null;
+    // Blood Requests
+    const bloodReqSql = `
+      SELECT br.*, COUNT(ba.allocation_id) AS allocated_count
+      FROM BloodRequest br
+      LEFT JOIN BloodAllocation ba ON br.request_id = ba.request_id
+      WHERE br.patient_id = ?
+      GROUP BY br.request_id
+      ORDER BY br.request_date DESC
+    `;
+    const bloodRequests = await db.query(bloodReqSql, [patientId]);
 
-    const bloodRequests = db.dbStore.bloodRequests
-      .filter((r) => r.patient_id === patientId)
-      .map((r) => {
-        const allocations = db.dbStore.bloodAllocations.filter((a) => a.request_id === r.request_id);
-        return {
-          ...r,
-          allocated_count: allocations.length,
-        };
-      });
-
-    const organRequests = db.dbStore.organRequests.filter((r) => r.patient_id === patientId);
+    // Organ Requests
+    const organReqSql = `
+      SELECT orq.*
+      FROM OrganRequest orq
+      WHERE orq.patient_id = ?
+      ORDER BY orq.request_date DESC
+    `;
+    const organRequests = await db.query(organReqSql, [patientId]);
 
     res.json({
       success: true,
       patient: {
         ...patient,
-        first_name: person ? person.first_name : '',
-        last_name: person ? person.last_name : '',
-        gender: person ? person.gender : '',
-        date_of_birth: person ? person.date_of_birth : '',
-        phone: person ? person.phone : '',
-        email: person ? person.email : '',
-        address: person ? person.address : '',
-        city: person ? person.city : '',
-        blood_group: person ? person.blood_group : 'O+',
-        hospital_name: hospital ? hospital.hospital_name : '',
-        ward_name: ward ? ward.ward_name : '',
         bloodRequests,
         organRequests,
       },
     });
   } catch (err) {
+    console.error('Patient detail error:', err);
     res.status(500).json({ success: false, message: 'Failed to retrieve patient details.' });
   }
 });
 
-// Register new patient (Person Supertype + Patient Subtype)
+// Register new patient (Person Supertype + Patient Subtype via Transaction)
 router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+  const conn = await db.getConnection();
+  if (!conn) {
+    return res.status(500).json({ success: false, message: 'Database connection unavailable.' });
+  }
+
   try {
     const {
       first_name,
@@ -138,6 +239,8 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
       state,
       pincode,
       blood_group,
+      emergency_contact_name,
+      emergency_contact_phone,
       hospital_id,
       ward_id,
       attending_doctor_id,
@@ -152,109 +255,192 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
       });
     }
 
-    // Check or create Person
-    let person = db.dbStore.persons.find((p) => p.phone === phone);
+    await conn.query('START TRANSACTION');
+
+    // 1. Check or insert Person
+    const [existingPerson] = await conn.query('SELECT person_id FROM Person WHERE phone = ?', [phone]);
     let personId;
 
-    if (!person) {
-      personId = db.dbStore.persons.length > 0 ? Math.max(...db.dbStore.persons.map((p) => p.person_id)) + 1 : 1;
-      person = {
-        person_id: personId,
+    if (existingPerson.length > 0) {
+      personId = existingPerson[0].person_id;
+    } else {
+      const personInsertSql = `
+        INSERT INTO Person 
+        (first_name, last_name, date_of_birth, gender, phone, email, address, city, state, pincode, blood_group, emergency_contact_name, emergency_contact_phone)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      const [personResult] = await conn.query(personInsertSql, [
         first_name,
         last_name,
-        date_of_birth: date_of_birth || '1990-01-01',
-        gender: gender || 'OTHER',
+        date_of_birth || '1990-01-01',
+        gender || 'OTHER',
         phone,
-        email: email || `patient_${personId}@lifelink.network`,
-        address: address || 'Clinical Care Unit',
-        city: city || 'City',
-        state: state || 'State',
-        pincode: pincode || '110001',
+        email || `patient_${Date.now()}@lifelink.network`,
+        address || 'Inpatient ward',
+        city || 'Delhi',
+        state || 'Delhi',
+        pincode || '110001',
         blood_group,
-        created_at: new Date().toISOString(),
-      };
-      db.dbStore.persons.push(person);
-    } else {
-      personId = person.person_id;
+        emergency_contact_name || 'Relative',
+        emergency_contact_phone || phone,
+      ]);
+      personId = personResult.insertId;
     }
 
-    const newPatientId = db.dbStore.patients.length > 0 ? Math.max(...db.dbStore.patients.map((pt) => pt.patient_id)) + 1 : 1;
-    const newPatient = {
-      patient_id: newPatientId,
-      person_id: personId,
-      hospital_id: parseInt(hospital_id, 10),
-      ward_id: ward_id ? parseInt(ward_id, 10) : null,
-      attending_doctor_id: attending_doctor_id ? parseInt(attending_doctor_id, 10) : null,
-      admission_date: new Date().toISOString().split('T')[0],
-      discharge_date: null,
-      medical_status: medical_status || 'STABLE',
-      medical_notes: medical_notes || 'Inpatient admission record.',
-    };
+    // 2. Insert Patient (Triggers automatically update Ward.occupied_beds)
+    const patientInsertSql = `
+      INSERT INTO Patient 
+      (person_id, hospital_id, ward_id, attending_doctor_id, admission_date, medical_status, medical_notes)
+      VALUES (?, ?, ?, ?, CURDATE(), ?, ?)
+    `;
+    const [patientResult] = await conn.query(patientInsertSql, [
+      personId,
+      parseInt(hospital_id, 10),
+      ward_id ? parseInt(ward_id, 10) : null,
+      attending_doctor_id ? parseInt(attending_doctor_id, 10) : null,
+      medical_status || 'STABLE',
+      medical_notes || 'Inpatient admission record.',
+    ]);
 
-    db.dbStore.patients.push(newPatient);
+    await conn.query('COMMIT');
 
-    // Bed occupancy increment trigger simulation
-    if (newPatient.ward_id) {
-      const ward = db.dbStore.wards.find((w) => w.ward_id === newPatient.ward_id);
-      if (ward && ward.occupied_beds < ward.total_beds) {
-        ward.occupied_beds++;
-      }
-    }
+    const newPatientId = patientResult.insertId;
 
     res.status(201).json({
       success: true,
       patient_id: newPatientId,
       message: `Patient admitted successfully (Patient ID: ${newPatientId}).`,
-      patient: newPatient,
     });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to register patient.' });
+    await conn.query('ROLLBACK');
+    console.error('Patient register error:', err);
+    res.status(500).json({ success: false, message: `Failed to register patient: ${err.message}` });
+  } finally {
+    conn.release();
   }
 });
 
-// Update patient status or discharge
+// Update patient status, ward, or medical notes
 router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+  const conn = await db.getConnection();
+  if (!conn) {
+    return res.status(500).json({ success: false, message: 'Database connection unavailable.' });
+  }
+
   try {
     const patientId = parseInt(req.params.id, 10);
-    const patient = db.dbStore.patients.find((pt) => pt.patient_id === patientId);
-    if (!patient) {
+    const { medical_status, ward_id, discharge_date, medical_notes, phone, email, address, city } = req.body;
+
+    const [ptRows] = await conn.query('SELECT * FROM Patient WHERE patient_id = ?', [patientId]);
+    if (ptRows.length === 0) {
       return res.status(404).json({ success: false, message: 'Patient not found.' });
     }
+    const currentPt = ptRows[0];
 
-    const { medical_status, ward_id, discharge_date, medical_notes } = req.body;
+    await conn.query('START TRANSACTION');
 
-    if (medical_status) {
-      if (medical_status === 'DISCHARGED' && patient.medical_status !== 'DISCHARGED') {
-        patient.discharge_date = discharge_date || new Date().toISOString().split('T')[0];
-        // Decrement ward occupancy
-        if (patient.ward_id) {
-          const ward = db.dbStore.wards.find((w) => w.ward_id === patient.ward_id);
-          if (ward && ward.occupied_beds > 0) ward.occupied_beds--;
-        }
-      }
-      patient.medical_status = medical_status;
+    const newDischargeDate = medical_status === 'DISCHARGED'
+      ? (discharge_date || new Date().toISOString().split('T')[0])
+      : currentPt.discharge_date;
+
+    const updatePatientSql = `
+      UPDATE Patient 
+      SET 
+        medical_status = COALESCE(?, medical_status),
+        ward_id = ?,
+        discharge_date = ?,
+        medical_notes = COALESCE(?, medical_notes)
+      WHERE patient_id = ?
+    `;
+
+    await conn.query(updatePatientSql, [
+      medical_status || null,
+      ward_id !== undefined ? (ward_id ? parseInt(ward_id, 10) : null) : currentPt.ward_id,
+      newDischargeDate,
+      medical_notes || null,
+      patientId,
+    ]);
+
+    // Optional Person info update
+    if (phone || email || address || city) {
+      const updatePersonSql = `
+        UPDATE Person 
+        SET 
+          phone = COALESCE(?, phone),
+          email = COALESCE(?, email),
+          address = COALESCE(?, address),
+          city = COALESCE(?, city)
+        WHERE person_id = ?
+      `;
+      await conn.query(updatePersonSql, [phone || null, email || null, address || null, city || null, currentPt.person_id]);
     }
 
-    if (ward_id !== undefined && ward_id !== patient.ward_id) {
-      // Transfer ward
-      if (patient.ward_id) {
-        const oldWard = db.dbStore.wards.find((w) => w.ward_id === patient.ward_id);
-        if (oldWard && oldWard.occupied_beds > 0) oldWard.occupied_beds--;
-      }
-      patient.ward_id = ward_id ? parseInt(ward_id, 10) : null;
-      if (patient.ward_id) {
-        const newWard = db.dbStore.wards.find((w) => w.ward_id === patient.ward_id);
-        if (newWard && newWard.occupied_beds < newWard.total_beds) newWard.occupied_beds++;
-      }
-    }
+    await conn.query('COMMIT');
 
-    if (medical_notes) patient.medical_notes = medical_notes;
-
-    res.json({ success: true, patient, message: 'Patient updated successfully.' });
+    res.json({
+      success: true,
+      message: `Patient ${patientId} updated successfully.`,
+    });
   } catch (err) {
-    res.status(500).json({ success: false, message: 'Failed to update patient.' });
+    await conn.query('ROLLBACK');
+    console.error('Patient update error:', err);
+    res.status(500).json({ success: false, message: `Failed to update patient: ${err.message}` });
+  } finally {
+    conn.release();
+  }
+});
+
+// Delete patient with referential integrity verification
+router.delete('/:id', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
+  const conn = await db.getConnection();
+  if (!conn) {
+    return res.status(500).json({ success: false, message: 'Database connection unavailable.' });
+  }
+
+  try {
+    const patientId = parseInt(req.params.id, 10);
+
+    // Check active blood requests or organ requests
+    const [bloodReqs] = await conn.query('SELECT COUNT(*) AS c FROM BloodRequest WHERE patient_id = ?', [patientId]);
+    const [organReqs] = await conn.query('SELECT COUNT(*) AS c FROM OrganRequest WHERE patient_id = ?', [patientId]);
+
+    if (bloodReqs[0].c > 0 || organReqs[0].c > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Referential Integrity: Patient cannot be deleted because ${bloodReqs[0].c} blood request(s) and ${organReqs[0].c} organ request(s) reference this record.`,
+      });
+    }
+
+    const [ptRows] = await conn.query('SELECT person_id FROM Patient WHERE patient_id = ?', [patientId]);
+    if (ptRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Patient not found.' });
+    }
+    const personId = ptRows[0].person_id;
+
+    await conn.query('START TRANSACTION');
+    await conn.query('DELETE FROM Patient WHERE patient_id = ?', [patientId]);
+
+    // Check if person has other roles (Donor, Staff)
+    const [donorCheck] = await conn.query('SELECT COUNT(*) AS c FROM Donor WHERE person_id = ?', [personId]);
+    const [staffCheck] = await conn.query('SELECT COUNT(*) AS c FROM Staff WHERE person_id = ?', [personId]);
+
+    if (donorCheck[0].c === 0 && staffCheck[0].c === 0) {
+      await conn.query('DELETE FROM Person WHERE person_id = ?', [personId]);
+    }
+
+    await conn.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: `Patient ${patientId} deleted successfully.`,
+    });
+  } catch (err) {
+    await conn.query('ROLLBACK');
+    console.error('Patient delete error:', err);
+    res.status(500).json({ success: false, message: `Failed to delete patient: ${err.message}` });
+  } finally {
+    conn.release();
   }
 });
 
 module.exports = router;
-

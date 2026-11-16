@@ -16,6 +16,7 @@ import {
   Menu,
   X,
   Shield,
+  Sparkles,
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -31,7 +32,8 @@ const Sidebar = () => {
     { to: '/blood-requests', label: 'Blood Requests & Priority', icon: Clock, badge: 'Mod 6', roles: ['ADMIN', 'STAFF', 'PATIENT'] },
     { to: '/organ-donation', label: 'Organ Donation Network', icon: HeartPulse, badge: 'Mod 7', roles: ['ADMIN', 'STAFF', 'DONOR', 'PATIENT'] },
     { to: '/donation-camps', label: 'Donation Camps', icon: Tent, badge: 'Mod 8', roles: ['ADMIN', 'STAFF', 'DONOR'] },
-    { to: '/sql-lab', label: 'SQL Laboratory', icon: Terminal, badge: 'Adv SQL', highlight: true, roles: ['ADMIN'] },
+    { to: '/dbms-lab', label: 'DBMS Learning Lab', icon: Sparkles, badge: '10 Modules', highlight: true, roles: ['ADMIN', 'STAFF', 'DONOR', 'PATIENT'] },
+    { to: '/sql-lab', label: 'SQL Laboratory', icon: Terminal, badge: 'Adv SQL', highlight: false, roles: ['ADMIN', 'STAFF'] },
     { to: '/eer-diagram', label: 'EER Diagram & Schema', icon: Network, badge: 'EER', roles: ['ADMIN', 'STAFF', 'DONOR', 'PATIENT'] },
   ];
 
