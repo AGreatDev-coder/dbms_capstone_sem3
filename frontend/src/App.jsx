@@ -7,6 +7,11 @@ import ErrorBoundary from './components/common/ErrorBoundary';
 
 // Pages
 import Dashboard from './pages/Dashboard';
+import DeveloperDashboard from './pages/dashboards/DeveloperDashboard';
+import HospitalAdminDashboard from './pages/dashboards/HospitalAdminDashboard';
+import StaffDashboard from './pages/dashboards/StaffDashboard';
+import DonorDashboard from './pages/dashboards/DonorDashboard';
+import PatientDashboard from './pages/dashboards/PatientDashboard';
 import HospitalManagement from './pages/HospitalManagement';
 import DonorManagement from './pages/DonorManagement';
 import PatientManagement from './pages/PatientManagement';
@@ -101,9 +106,60 @@ function App() {
             <Route
               path="/"
               element={
-                <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR', 'PATIENT']}>
+                <ProtectedRoute allowedRoles={['DEVELOPER', 'ADMIN', 'STAFF', 'DONOR', 'PATIENT']}>
                   <MainLayout>
                     <Dashboard />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            {/* Dedicated Role Dashboard Direct Routes */}
+            <Route
+              path="/dashboard/developer"
+              element={
+                <ProtectedRoute allowedRoles={['DEVELOPER']}>
+                  <MainLayout>
+                    <DeveloperDashboard />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/hospital-admin"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN']}>
+                  <MainLayout>
+                    <HospitalAdminDashboard />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/staff"
+              element={
+                <ProtectedRoute allowedRoles={['STAFF']}>
+                  <MainLayout>
+                    <StaffDashboard />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/donor"
+              element={
+                <ProtectedRoute allowedRoles={['DONOR']}>
+                  <MainLayout>
+                    <DonorDashboard />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/patient"
+              element={
+                <ProtectedRoute allowedRoles={['PATIENT']}>
+                  <MainLayout>
+                    <PatientDashboard />
                   </MainLayout>
                 </ProtectedRoute>
               }

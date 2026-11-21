@@ -7,18 +7,37 @@ const Sidebar = () => {
   const { user } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const currentRole = user?.role || 'PATIENT';
+
+  const getDashboardLabel = (role) => {
+    switch (role) {
+      case 'DEVELOPER':
+        return 'Developer Console';
+      case 'ADMIN':
+        return 'Hospital Admin Dashboard';
+      case 'STAFF':
+        return 'Staff Operations';
+      case 'DONOR':
+        return 'Donor Dashboard';
+      case 'PATIENT':
+        return 'Patient Care Dashboard';
+      default:
+        return 'Dashboard';
+    }
+  };
+
   const sections = [
     {
       group: 'Overview',
       items: [
-        { to: '/', number: '01', label: 'Dashboard', roles: ['ADMIN', 'STAFF', 'DONOR', 'PATIENT'] },
+        { to: '/', number: '01', label: getDashboardLabel(currentRole), roles: ['DEVELOPER', 'ADMIN', 'STAFF', 'DONOR', 'PATIENT'] },
       ],
     },
     {
       group: 'Clinical Records',
       items: [
         { to: '/hospitals', number: '02', label: 'Hospitals & Wards', roles: ['ADMIN', 'STAFF'] },
-        { to: '/patients', number: '03', label: 'Patients (400 Dataset)', roles: ['ADMIN', 'STAFF', 'PATIENT'] },
+        { to: '/patients', number: '03', label: 'Patients (400 Dataset)', roles: ['ADMIN', 'STAFF'] },
       ],
     },
     {
@@ -45,8 +64,6 @@ const Sidebar = () => {
       ],
     },
   ];
-
-  const currentRole = user?.role || 'PATIENT';
 
   return (
     <>
