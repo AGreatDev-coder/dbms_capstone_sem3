@@ -29,7 +29,11 @@ router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'PATIENT'), 
       }
     }
 
-    if (hospital_id) {
+    // RBAC: ADMIN and STAFF can only view blood requests from their assigned hospital
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      conditions.push('br.hospital_id = ?');
+      params.push(req.user.hospital_id);
+    } else if (hospital_id) {
       conditions.push('br.hospital_id = ?');
       params.push(parseInt(hospital_id, 10));
     }
@@ -101,7 +105,11 @@ const handlePrioritizedRequests = async (req, res) => {
     const conditions = ["br.request_status IN ('PENDING', 'PARTIALLY_FULFILLED')"];
     const params = [];
 
-    if (hospital_id) {
+    // RBAC: ADMIN and STAFF can only view blood requests from their assigned hospital
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      conditions.push('br.hospital_id = ?');
+      params.push(req.user.hospital_id);
+    } else if (hospital_id) {
       conditions.push('br.hospital_id = ?');
       params.push(parseInt(hospital_id, 10));
     }
@@ -174,6 +182,12 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'PATIENT'),
     } = req.body;
 
     let targetPatientId = req.body.patient_id;
+    let finalHospitalId = hospital_id;
+
+    // RBAC: If ADMIN/STAFF, enforce hospital_id
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      finalHospitalId = req.user.hospital_id;
+    }
 
     // RBAC: If PATIENT, force own patient_id
     if (req.user.role === 'PATIENT') {
@@ -189,7 +203,7 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'PATIENT'),
 
     const fields = {};
     if (!targetPatientId) fields.patient_id = 'Patient ID is required.';
-    if (!hospital_id) fields.hospital_id = 'Hospital ID is required.';
+    if (!finalHospitalId) fields.hospital_id = 'Hospital ID is required.';
     if (!blood_group) fields.blood_group = 'Blood group is required.';
     if (!units_required || parseInt(units_required, 10) <= 0) fields.units_required = 'Units required must be at least 1.';
 

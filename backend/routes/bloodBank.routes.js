@@ -10,7 +10,7 @@ const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 const { handleMySQLError } = require('../utils/errorHandler');
 
 // Get blood inventory with filters, search, and pagination
-router.get('/inventory', async (req, res) => {
+router.get('/inventory', authenticateToken, async (req, res) => {
   try {
     const { blood_group, component_type, hospital_id, search, page = 1, limit = 50 } = req.query;
     const targetStatus = req.query.storage_status || req.query.status;
@@ -18,15 +18,11 @@ router.get('/inventory', async (req, res) => {
     const conditions = ['1=1'];
     const params = [];
 
-    if (blood_group) {
-      conditions.push('bu.blood_group = ?');
-      params.push(blood_group);
-    }
-    if (component_type) {
-      conditions.push('bu.component_type = ?');
-      params.push(component_type);
-    }
-    if (hospital_id) {
+    // RBAC: ADMIN and STAFF can only view their own hospital's inventory
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      conditions.push('bu.hospital_id = ?');
+      params.push(req.user.hospital_id);
+    } else if (hospital_id) {
       conditions.push('bu.hospital_id = ?');
       params.push(parseInt(hospital_id, 10));
     }
@@ -93,8 +89,15 @@ router.get('/inventory', async (req, res) => {
 });
 
 // Hospital-Wise Inventory Matrix Summary (Query 3 / View)
-router.get('/summary', async (req, res) => {
+router.get('/summary', authenticateToken, async (req, res) => {
   try {
+    const conditions = ['1=1'];
+    const params = [];
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      conditions.push('h.hospital_id = ?');
+      params.push(req.user.hospital_id);
+    }
+
     const sql = `
       SELECT 
         h.hospital_id,
@@ -107,10 +110,11 @@ router.get('/summary', async (req, res) => {
         COUNT(bu.unit_id) AS total_units_tracked
       FROM Hospital h
       LEFT JOIN BloodUnit bu ON h.hospital_id = bu.hospital_id
+      WHERE ${conditions.join(' AND ')}
       GROUP BY h.hospital_id, h.hospital_name, h.city
       ORDER BY available_units DESC
     `;
-    const summary = await db.query(sql);
+    const summary = await db.query(sql, params);
 
     const formatted = summary.map((s) => ({
       ...s,
@@ -132,8 +136,15 @@ router.get('/summary', async (req, res) => {
 });
 
 // Blood Donations History Log
-router.get('/donations', async (req, res) => {
+router.get('/donations', authenticateToken, async (req, res) => {
   try {
+    const conditions = ['1=1'];
+    const params = [];
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      conditions.push('bd.hospital_id = ?');
+      params.push(req.user.hospital_id);
+    }
+
     const sql = `
       SELECT 
         bd.donation_id,
@@ -158,9 +169,10 @@ router.get('/donations', async (req, res) => {
       LEFT JOIN DonationCamp c ON bd.donation_camp_id = c.camp_id
       LEFT JOIN Staff s ON bd.recorded_by_staff_id = s.staff_id
       LEFT JOIN Person sp ON s.person_id = sp.person_id
+      WHERE ${conditions.join(' AND ')}
       ORDER BY bd.donation_date DESC, bd.donation_id DESC
     `;
-    const donations = await db.query(sql);
+    const donations = await db.query(sql, params);
 
     res.json({
       success: true,
@@ -173,8 +185,15 @@ router.get('/donations', async (req, res) => {
 });
 
 // Query 2 Implementation: Expiring Blood Units CTE
-router.get('/expiring-soon', async (req, res) => {
+router.get('/expiring-soon', authenticateToken, async (req, res) => {
   try {
+    const conditions = ['bu.storage_status = "AVAILABLE"', 'bu.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)'];
+    const params = [];
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      conditions.push('bu.hospital_id = ?');
+      params.push(req.user.hospital_id);
+    }
+
     const sql = `
       WITH ExpiringUnits AS (
         SELECT 
@@ -187,8 +206,7 @@ router.get('/expiring-soon', async (req, res) => {
           bu.hospital_id,
           DATEDIFF(bu.expiry_date, CURDATE()) AS remaining_shelf_life_days
         FROM BloodUnit bu
-        WHERE bu.storage_status = 'AVAILABLE'
-          AND bu.expiry_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+        WHERE ${conditions.join(' AND ')}
       )
       SELECT 
         eu.*,
@@ -199,7 +217,7 @@ router.get('/expiring-soon', async (req, res) => {
       ORDER BY remaining_shelf_life_days ASC, blood_group ASC
     `;
 
-    const expiringUnits = await db.query(sql);
+    const expiringUnits = await db.query(sql, params);
 
     res.json({
       success: true,
@@ -232,9 +250,9 @@ router.get('/compatibility', async (req, res) => {
   }
 });
 
-// Record In-Hospital Blood Donation (ADMIN, STAFF)
+// Record In-Hospital Blood Donation (STAFF for their hospital, DEVELOPER for any hospital)
 // Validates hemoglobin >= 12.5 g/dL and volume 350-450 ml, inserting BloodDonation and creating BloodUnit rows
-router.post('/donations', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+router.post('/donations', authenticateToken, authorizeRoles('STAFF', 'DEVELOPER'), async (req, res) => {
   const conn = await db.getConnection();
   if (!conn) {
     return res.status(500).json({ success: false, message: 'Database connection pool unavailable.' });
@@ -251,11 +269,16 @@ router.post('/donations', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), a
       remarks,
     } = req.body;
 
+    let finalHospitalId = hospital_id;
+    if (req.user && req.user.role === 'STAFF' && req.user.hospital_id) {
+      finalHospitalId = req.user.hospital_id;
+    }
+
     const staffId = req.user?.staff_id || 7;
 
     const fields = {};
     if (!donor_id) fields.donor_id = 'Donor ID is required.';
-    if (!hospital_id) fields.hospital_id = 'Hospital ID is required.';
+    if (!finalHospitalId) fields.hospital_id = 'Hospital ID is required.';
 
     const hb = Number(hemoglobin_level);
     if (isNaN(hb) || hb < 12.5) {
@@ -302,7 +325,7 @@ router.post('/donations', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), a
     `;
     const [donationResult] = await conn.query(donationInsertSql, [
       parseInt(donor_id, 10),
-      parseInt(hospital_id, 10),
+      parseInt(finalHospitalId, 10),
       staffId,
       qty,
       hb,
@@ -342,7 +365,7 @@ router.post('/donations', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), a
       const [unitResult] = await conn.query(unitInsertSql, [
         donationId,
         donor.donor_id,
-        parseInt(hospital_id, 10),
+        parseInt(finalHospitalId, 10),
         donor.blood_group,
         comp,
         days,

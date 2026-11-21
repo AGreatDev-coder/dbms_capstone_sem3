@@ -12,13 +12,18 @@ const { handleMySQLError } = require('../utils/errorHandler');
 // Lightweight Hospital Options for Dropdowns (accessible to all authenticated roles)
 router.get('/options', authenticateToken, async (req, res) => {
   try {
-    const sql = `
+    let sql = `
       SELECT hospital_id, hospital_name, city, state, is_active
       FROM Hospital
       WHERE is_active = TRUE
-      ORDER BY hospital_name ASC
     `;
-    const hospitals = await db.query(sql);
+    const params = [];
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      sql += ' AND hospital_id = ?';
+      params.push(req.user.hospital_id);
+    }
+    sql += ' ORDER BY hospital_name ASC';
+    const hospitals = await db.query(sql, params);
     res.json({
       success: true,
       hospitals,
@@ -30,8 +35,17 @@ router.get('/options', authenticateToken, async (req, res) => {
 });
 
 // Get all hospitals with aggregate metrics
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
+    const conditions = ['1=1'];
+    const params = [];
+
+    // RBAC: ADMIN and STAFF can only view their designated hospital facility
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      conditions.push('h.hospital_id = ?');
+      params.push(req.user.hospital_id);
+    }
+
     const sql = `
       SELECT 
         h.hospital_id,
@@ -76,9 +90,10 @@ router.get('/', async (req, res) => {
         WHERE is_active = TRUE
         GROUP BY hospital_id
       ) s_agg ON h.hospital_id = s_agg.hospital_id
+      WHERE ${conditions.join(' AND ')}
       ORDER BY h.hospital_id ASC
     `;
-    const hospitals = await db.query(sql);
+    const hospitals = await db.query(sql, params);
 
     // Format numbers as actual numbers
     const formatted = hospitals.map((h) => {
@@ -111,7 +126,13 @@ router.get('/', async (req, res) => {
 // Staff Hierarchy Tree using SQL Self-Join on Staff (supervisor_staff_id)
 const getStaffHierarchyHandler = async (req, res) => {
   try {
-    const hospitalId = req.params.id || req.query.hospital_id;
+    let hospitalId = req.params.id || req.query.hospital_id;
+
+    // RBAC: ADMIN is restricted to their assigned hospital hierarchy
+    if (req.user && req.user.role === 'ADMIN' && req.user.hospital_id) {
+      hospitalId = req.user.hospital_id;
+    }
+
     const conditions = ['s.is_active = TRUE'];
     const params = [];
 
@@ -171,9 +192,15 @@ router.get('/staff-hierarchy', authenticateToken, authorizeRoles('ADMIN'), getSt
 router.get('/:id/staff-hierarchy', authenticateToken, authorizeRoles('ADMIN'), getStaffHierarchyHandler);
 
 // Get single hospital with wards and staff count
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const hospitalId = parseInt(req.params.id, 10);
+
+    // RBAC: ADMIN and STAFF can only view their own hospital
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id && req.user.hospital_id !== hospitalId) {
+      return res.status(403).json({ success: false, message: 'Forbidden: You can only access records for your designated hospital facility.' });
+    }
+
     const sql = `
       SELECT 
         hospital_id,
@@ -215,9 +242,15 @@ router.get('/:id', async (req, res) => {
 });
 
 // Get wards for a specific hospital
-router.get('/:id/wards', async (req, res) => {
+router.get('/:id/wards', authenticateToken, async (req, res) => {
   try {
     const hospitalId = parseInt(req.params.id, 10);
+
+    // RBAC: ADMIN and STAFF can only view wards for their designated hospital
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id && req.user.hospital_id !== hospitalId) {
+      return res.status(403).json({ success: false, message: 'Forbidden: You can only access ward records for your designated hospital facility.' });
+    }
+
     const sql = `
       SELECT 
         w.*,
@@ -247,8 +280,8 @@ router.get('/:id/wards', async (req, res) => {
   }
 });
 
-// Create new hospital (ADMIN only)
-router.post('/', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
+// Create new hospital (DEVELOPER only - registering hospital institutions across the health grid)
+router.post('/', authenticateToken, authorizeRoles('DEVELOPER'), async (req, res) => {
   try {
     const {
       hospital_name,
@@ -321,10 +354,16 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN'), async (req, res) =>
   }
 });
 
-// Create new ward for hospital (ADMIN only)
-router.post('/:id/wards', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
+// Create new ward for hospital (ADMIN for their hospital, DEVELOPER for any hospital)
+router.post('/:id/wards', authenticateToken, authorizeRoles('ADMIN', 'DEVELOPER'), async (req, res) => {
   try {
     const hospitalId = parseInt(req.params.id, 10);
+
+    // RBAC: ADMIN can only add wards to their designated hospital facility
+    if (req.user && req.user.role === 'ADMIN' && req.user.hospital_id && req.user.hospital_id !== hospitalId) {
+      return res.status(403).json({ success: false, message: 'Forbidden: You can only manage wards in your designated hospital facility.' });
+    }
+
     const { ward_name, ward_type, floor_number, total_beds } = req.body;
 
     const fields = {};
@@ -383,7 +422,13 @@ const addStaffHandler = async (req, res) => {
   }
 
   try {
-    const hospitalId = parseInt(req.params.id || req.body.hospital_id, 10);
+    let hospitalId = parseInt(req.params.id || req.body.hospital_id, 10);
+
+    // RBAC: ADMIN can only add staff to their designated hospital facility
+    if (req.user && req.user.role === 'ADMIN' && req.user.hospital_id) {
+      hospitalId = req.user.hospital_id;
+    }
+
     const {
       first_name,
       last_name,
@@ -474,6 +519,15 @@ const removeStaffHandler = async (req, res) => {
   }
 
   try {
+    // RBAC: ADMIN can only remove staff belonging to their designated hospital facility
+    if (req.user && req.user.role === 'ADMIN' && req.user.hospital_id) {
+      const [checkRows] = await conn.query('SELECT hospital_id FROM Staff WHERE staff_id = ?', [staffId]);
+      if (checkRows.length === 0 || checkRows[0].hospital_id !== req.user.hospital_id) {
+        conn.release();
+        return res.status(403).json({ success: false, message: 'Forbidden: You can only remove staff members from your designated hospital facility.' });
+      }
+    }
+
     await conn.query('START TRANSACTION');
 
     // 1. Unassign subordinates so recursive self-join foreign key does not break

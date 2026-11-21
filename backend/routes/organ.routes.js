@@ -92,11 +92,17 @@ router.post('/donations', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'D
 });
 
 // Get organ requests (recipient waitlist)
-router.get('/requests', async (req, res) => {
+router.get('/requests', authenticateToken, async (req, res) => {
   try {
     const { organ_type, status, urgency_level } = req.query;
     const conditions = ['1=1'];
     const params = [];
+
+    // RBAC: ADMIN and STAFF are scoped to their own hospital's recipients
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      conditions.push('oq.hospital_id = ?');
+      params.push(req.user.hospital_id);
+    }
 
     if (organ_type) {
       conditions.push('oq.organ_type = ?');
@@ -191,11 +197,17 @@ router.post('/requests', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), as
 });
 
 // Get organ matches with committee verification status
-router.get('/matches', async (req, res) => {
+router.get('/matches', authenticateToken, async (req, res) => {
   try {
     const { verification_status } = req.query;
     const conditions = ['1=1'];
     const params = [];
+
+    // RBAC: ADMIN and STAFF are scoped to matches involving their hospital
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      conditions.push('oq.hospital_id = ?');
+      params.push(req.user.hospital_id);
+    }
 
     if (verification_status) {
       conditions.push('om.verification_status = ?');

@@ -8,6 +8,7 @@ const Navbar = () => {
   const [roleMenuOpen, setRoleMenuOpen] = useState(false);
 
   const personas = [
+    { username: 'developer', role: 'DEVELOPER', name: 'System Developer', desc: 'Universal Master Access &bull; All Hospitals' },
     { username: 'admin', role: 'ADMIN', name: 'Dr. Vikram Sharma', desc: 'AIIMS &bull; Chief Medical Officer' },
     { username: 'staff_priya', role: 'STAFF', name: 'Dr. Priya Sundaram', desc: 'Apollo &bull; Transfusion Services' },
     { username: 'donor_rahul', role: 'DONOR', name: 'Rahul Deshmukh', desc: 'Universal Donor (O-)' },
@@ -39,6 +40,19 @@ const Navbar = () => {
 
         {/* Right: Engine Status, Role Switcher, Account */}
         <div className="flex items-center gap-3 text-xs">
+          {/* Facility / Universal Scope Indicator */}
+          {user?.role === 'DEVELOPER' ? (
+            <div className="hidden lg:flex items-center gap-1.5 font-mono text-[11px] text-moss border border-moss/30 px-2 py-0.5 rounded-[2px] bg-moss/10 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-moss" />
+              <span>Universal Ledger Mode</span>
+            </div>
+          ) : user?.hospital_name ? (
+            <div className="hidden lg:flex items-center gap-1.5 font-mono text-[11px] text-ink border border-rule px-2 py-0.5 rounded-[2px] bg-paper" title={user.hospital_name}>
+              <span className="w-1.5 h-1.5 rounded-full bg-blood" />
+              <span className="max-w-[180px] truncate">{user.hospital_name}</span>
+            </div>
+          ) : null}
+
           {/* Database Engine Status */}
           <div
             className="flex items-center gap-1.5 font-mono text-[11px] text-muted border border-rule px-2 py-0.5 rounded-[2px] bg-paper"

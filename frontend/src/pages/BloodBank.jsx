@@ -191,7 +191,7 @@ const BloodBank = () => {
         description="Catalog of perishable blood bags, component fractionation (RBC, Platelets, Plasma, Cryo), shelf-life monitoring, and donation harvest logging."
         badge={`${inventory.length} Cataloged Units`}
         action={
-          (user?.role === 'ADMIN' || user?.role === 'STAFF') && (
+          (user?.role === 'STAFF' || user?.role === 'DEVELOPER') && (
             <Button
               variant="primary"
               size="md"
@@ -203,6 +203,32 @@ const BloodBank = () => {
           )
         }
       />
+
+      {/* Facility Scope Indicator */}
+      {user?.role !== 'DEVELOPER' && user?.hospital_name && (
+        <div className="p-3 border border-rule bg-surface rounded-[2px] flex items-center justify-between text-xs font-mono">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-blood" />
+            <span className="text-muted">Blood Bank Facility Scope:</span>
+            <span className="font-semibold text-ink">{user.hospital_name}</span>
+          </div>
+          <span className="text-[10px] uppercase tracking-wider text-muted px-1.5 py-0.5 border border-rule bg-paper">
+            Facility ID #{user.hospital_id}
+          </span>
+        </div>
+      )}
+      {user?.role === 'DEVELOPER' && (
+        <div className="p-3 border border-moss/40 bg-moss/10 rounded-[2px] flex items-center justify-between text-xs font-mono text-moss">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-moss" />
+            <span className="font-bold">Universal Blood Bank Oversight:</span>
+            <span>Unrestricted inventory, donation harvest logs, and cold storage metrics</span>
+          </div>
+          <span className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 border border-moss/40 bg-paper text-moss">
+            DEVELOPER ACCESS
+          </span>
+        </div>
+      )}
 
       {feedback && (
         <div
@@ -267,16 +293,23 @@ const BloodBank = () => {
               <option value="RESERVED">Reserved</option>
             </select>
 
-            <select
-              value={hospFilter}
-              onChange={(e) => setHospFilter(e.target.value)}
-              className="px-2 py-1.5 bg-paper border border-rule text-xs text-ink rounded-[2px] focus:outline-none"
-            >
-              <option value="">All Hospitals</option>
-              {hospitals.map((h) => (
-                <option key={h.hospital_id} value={h.hospital_id}>{h.hospital_name}</option>
-              ))}
-            </select>
+            {user?.role === 'DEVELOPER' ? (
+              <select
+                value={hospFilter}
+                onChange={(e) => setHospFilter(e.target.value)}
+                className="px-2 py-1.5 bg-paper border border-rule text-xs text-ink rounded-[2px] focus:outline-none"
+              >
+                <option value="">All Hospitals (Universal View)</option>
+                {hospitals.map((h) => (
+                  <option key={h.hospital_id} value={h.hospital_id}>{h.hospital_name}</option>
+                ))}
+              </select>
+            ) : (
+              <div className="px-2.5 py-1.5 bg-surface border border-rule text-xs text-muted rounded-[2px] font-mono flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-blood" />
+                <span>{user?.hospital_name || 'Assigned Center'}</span>
+              </div>
+            )}
 
             {(bgFilter || compFilter || statusFilter || hospFilter) && (
               <button
@@ -573,13 +606,14 @@ const BloodBank = () => {
         </div>
       )}
 
-      {/* Record Blood Donation Modal */}
-      <Modal
-        isOpen={isAddDonationOpen}
-        onClose={() => setIsAddDonationOpen(false)}
-        title="Record Voluntary Blood Donation"
-        subtitle="Generates BloodDonation entity and fractionated BloodUnit storage bags"
-      >
+      {/* Record Blood Donation Modal (Staff & Developer) */}
+      {(user?.role === 'STAFF' || user?.role === 'DEVELOPER') && (
+        <Modal
+          isOpen={isAddDonationOpen}
+          onClose={() => setIsAddDonationOpen(false)}
+          title="Record Voluntary Blood Donation"
+          subtitle="Generates BloodDonation entity and fractionated BloodUnit storage bags"
+        >
         <form onSubmit={handleCreateDonation} className="space-y-3.5">
           <Select
             label="Registered Volunteer Donor"
@@ -664,6 +698,7 @@ const BloodBank = () => {
           </div>
         </form>
       </Modal>
+      )}
     </div>
   );
 };

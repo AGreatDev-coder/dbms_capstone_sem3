@@ -14,18 +14,25 @@ const Login = () => {
 
   const personas = [
     {
+      username: 'developer',
+      role: 'DEVELOPER',
+      name: 'System Developer',
+      facility: 'Universal System Grid',
+      scope: 'Universal data access across all hospitals, full write permissions, schema & system orchestration',
+    },
+    {
       username: 'admin',
       role: 'ADMIN',
       name: 'Dr. Vikram Sharma',
       facility: 'AIIMS New Delhi',
-      scope: 'Full schema privileges, hospital registry, advanced SQL lab',
+      scope: 'AIIMS hospital admin, local ward management, staff hierarchy supervision (Hospital-scoped)',
     },
     {
       username: 'staff_priya',
       role: 'STAFF',
       name: 'Dr. Priya Sundaram',
       facility: 'Apollo Multispeciality',
-      scope: 'Transfusion triage, blood unit allocation, organ verification',
+      scope: 'Apollo hospital staff, patient intake, transfusion allocations, phlebotomy (Hospital-scoped)',
     },
     {
       username: 'donor_rahul',

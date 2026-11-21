@@ -26,7 +26,11 @@ router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req,
     const conditions = ['1=1'];
     const params = [];
 
-    if (hospital_id) {
+    // RBAC: ADMIN and STAFF are strictly scoped to their hospital
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      conditions.push('pt.hospital_id = ?');
+      params.push(req.user.hospital_id);
+    } else if (hospital_id) {
       conditions.push('pt.hospital_id = ?');
       params.push(parseInt(hospital_id, 10));
     }
@@ -174,6 +178,16 @@ router.get('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'PATIENT'
 
     const patient = patientRows[0];
 
+    // RBAC: ADMIN and STAFF can only view patients in their own hospital
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      if (patient.hospital_id !== req.user.hospital_id) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: You can only view patient records admitted to your designated hospital facility.',
+        });
+      }
+    }
+
     // RBAC: PATIENT can only view their own record
     if (req.user.role === 'PATIENT') {
       const isOwner =
@@ -249,12 +263,17 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
       medical_notes,
     } = req.body;
 
+    let finalHospitalId = hospital_id;
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      finalHospitalId = req.user.hospital_id;
+    }
+
     const fields = {};
     if (!first_name || !first_name.trim()) fields.first_name = 'First name is required.';
     if (!last_name || !last_name.trim()) fields.last_name = 'Last name is required.';
     if (!phone || !phone.trim()) fields.phone = 'Phone number is required.';
     if (!blood_group) fields.blood_group = 'Blood group is required.';
-    if (!hospital_id) fields.hospital_id = 'Hospital is required.';
+    if (!finalHospitalId) fields.hospital_id = 'Hospital is required.';
 
     if (Object.keys(fields).length > 0) {
       return res.status(400).json({
@@ -345,7 +364,7 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
     `;
     const [patientResult] = await conn.query(patientInsertSql, [
       personId,
-      parseInt(hospital_id, 10),
+      parseInt(finalHospitalId, 10),
       ward_id ? parseInt(ward_id, 10) : null,
       attending_doctor_id ? parseInt(attending_doctor_id, 10) : null,
       medical_status,
@@ -394,6 +413,14 @@ router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (r
       return res.status(404).json({ success: false, message: 'Patient not found.' });
     }
     const currentPt = ptRows[0];
+
+    // RBAC: ADMIN and STAFF can only update patient records in their own hospital
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      if (currentPt.hospital_id !== req.user.hospital_id) {
+        conn.release();
+        return res.status(403).json({ success: false, message: 'Forbidden: You can only modify patient records admitted to your designated hospital facility.' });
+      }
+    }
 
     await conn.query('START TRANSACTION');
 
@@ -488,10 +515,15 @@ router.delete('/:id', authenticateToken, authorizeRoles('ADMIN'), async (req, re
       });
     }
 
-    const [ptRows] = await conn.query('SELECT person_id FROM Patient WHERE patient_id = ?', [patientId]);
+    const [ptRows] = await conn.query('SELECT person_id, hospital_id FROM Patient WHERE patient_id = ?', [patientId]);
     if (ptRows.length === 0) {
       return res.status(404).json({ success: false, message: 'Patient not found.' });
     }
+
+    if (req.user && req.user.role === 'ADMIN' && req.user.hospital_id && ptRows[0].hospital_id !== req.user.hospital_id) {
+      return res.status(403).json({ success: false, message: 'Forbidden: You can only delete patient records admitted to your designated hospital facility.' });
+    }
+
     const personId = ptRows[0].person_id;
 
     await conn.query('START TRANSACTION');

@@ -62,7 +62,7 @@ const Dashboard = () => {
       <PageHeader
         breadcrumb="Central Operations Ledger"
         title="Network Operations & Triage"
-        description="Continuous monitoring of regional blood bank reserves, priority transfusion requisitions, and organ match candidates across 5 tertiary medical facilities."
+        description="Continuous monitoring of regional blood bank reserves, priority transfusion requisitions, and organ match candidates across 6 affiliated medical facilities."
         action={
           <Button
             variant="secondary"
@@ -73,6 +73,32 @@ const Dashboard = () => {
           </Button>
         }
       />
+
+      {/* Facility Scope Indicator */}
+      {user?.role !== 'DEVELOPER' && user?.hospital_name && (
+        <div className="p-3 border border-rule bg-surface rounded-[2px] flex items-center justify-between text-xs font-mono">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-blood" />
+            <span className="text-muted">Operations Dashboard Scoped To:</span>
+            <span className="font-semibold text-ink">{user.hospital_name}</span>
+          </div>
+          <span className="text-[10px] uppercase tracking-wider text-muted px-1.5 py-0.5 border border-rule bg-paper">
+            Facility ID #{user.hospital_id} &bull; Local Metrics
+          </span>
+        </div>
+      )}
+      {user?.role === 'DEVELOPER' && (
+        <div className="p-3 border border-moss/40 bg-moss/10 rounded-[2px] flex items-center justify-between text-xs font-mono text-moss">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-moss" />
+            <span className="font-bold">Universal Operations Oversight:</span>
+            <span>Real-time aggregate data, cross-center requisitions, and inventory across all 6 facilities</span>
+          </div>
+          <span className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 border border-moss/40 bg-paper text-moss">
+            DEVELOPER ACCESS
+          </span>
+        </div>
+      )}
 
       <PageState loading={loading} error={error} onRetry={fetchDashboardData}>
         {/* Primary Metrics: Big Serif Numerals on hairline dividers */}

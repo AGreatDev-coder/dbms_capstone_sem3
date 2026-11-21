@@ -76,7 +76,8 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
+  // DEVELOPER has universal clearance to all frontend ledger modules
+  if (allowedRoles && user.role !== 'DEVELOPER' && !allowedRoles.includes(user.role)) {
     return (
       <MainLayout>
         <AccessDenied allowedRoles={allowedRoles} userRole={user.role} />

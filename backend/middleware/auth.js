@@ -18,6 +18,8 @@ function generateToken(user) {
       donor_id: user.donor_id || null,
       patient_id: user.patient_id || null,
       staff_id: user.staff_id || null,
+      hospital_id: user.hospital_id || null,
+      hospital_name: user.hospital_name || null,
     },
     JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
@@ -54,6 +56,11 @@ function authorizeRoles(...allowedRoles) {
         success: false,
         message: 'Unauthorized: User role not identified.',
       });
+    }
+
+    // DEVELOPER has universal override authorization across all resources and operations
+    if (req.user.role === 'DEVELOPER') {
+      return next();
     }
 
     if (!allowedRoles.includes(req.user.role)) {

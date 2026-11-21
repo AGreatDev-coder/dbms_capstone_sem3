@@ -72,7 +72,7 @@ const Sidebar = () => {
       >
         <div className="p-4 space-y-5">
           {sections.map((section) => {
-            const visibleItems = section.items.filter((item) => item.roles.includes(currentRole));
+            const visibleItems = section.items.filter((item) => currentRole === 'DEVELOPER' || item.roles.includes(currentRole));
             if (visibleItems.length === 0) return null;
 
             return (
@@ -108,14 +108,25 @@ const Sidebar = () => {
         </div>
 
         {/* Signed-in status footer */}
-        <div className="p-4 m-3 border-t border-rule font-mono text-[11px] text-muted space-y-1">
+        <div className="p-4 m-3 border-t border-rule font-mono text-[11px] text-muted space-y-1.5">
           <div className="flex items-center justify-between text-ink">
-            <span>{user?.username || 'Guest'}</span>
-            <span className="px-1 py-0.2 border border-rule text-[10px] rounded-[2px] uppercase">
+            <span className="font-medium truncate">{user?.username || 'Guest'}</span>
+            <span className={`px-1.5 py-0.5 border text-[10px] rounded-[2px] uppercase font-bold ${
+              currentRole === 'DEVELOPER' ? 'bg-moss/10 border-moss/40 text-moss' : 'border-rule'
+            }`}>
               {currentRole}
             </span>
           </div>
-          <p className="text-[10px] text-muted/80 leading-normal">
+          {currentRole === 'DEVELOPER' ? (
+            <p className="text-[10px] text-moss font-semibold">
+              Universal Access Ledger &bull; All Hospitals
+            </p>
+          ) : user?.hospital_name ? (
+            <p className="text-[10px] text-muted leading-tight truncate" title={user.hospital_name}>
+              {user.hospital_name}
+            </p>
+          ) : null}
+          <p className="text-[10px] text-muted/70 leading-normal">
             MySQL 8.0 InnoDB &bull; 3NF Relational Ledger
           </p>
         </div>

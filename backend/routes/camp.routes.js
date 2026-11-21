@@ -9,17 +9,17 @@ const db = require('../config/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
 
 // Get all donation camps with aggregated metrics
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const { status, hospital_id } = req.query;
     const conditions = ['1=1'];
     const params = [];
 
-    if (status) {
-      conditions.push('c.camp_status = ?');
-      params.push(status);
-    }
-    if (hospital_id) {
+    // RBAC: ADMIN and STAFF can only view camps associated with their hospital
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      conditions.push('c.hospital_id = ?');
+      params.push(req.user.hospital_id);
+    } else if (hospital_id) {
       conditions.push('c.hospital_id = ?');
       params.push(parseInt(hospital_id, 10));
     }
@@ -162,7 +162,12 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
       contact_phone,
     } = req.body;
 
-    if (!camp_name || !organizer || !hospital_id || !location || !city || !start_date || !end_date) {
+    let finalHospitalId = hospital_id;
+    if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'STAFF') && req.user.hospital_id) {
+      finalHospitalId = req.user.hospital_id;
+    }
+
+    if (!camp_name || !organizer || !finalHospitalId || !location || !city || !start_date || !end_date) {
       return res.status(400).json({ success: false, message: 'All required camp details must be provided.' });
     }
 
@@ -174,7 +179,7 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
     const result = await db.query(sql, [
       camp_name,
       organizer,
-      parseInt(hospital_id, 10),
+      parseInt(finalHospitalId, 10),
       location,
       city,
       start_date,

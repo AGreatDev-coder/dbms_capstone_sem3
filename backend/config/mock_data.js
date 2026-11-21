@@ -356,6 +356,7 @@ const initialOrganMatches = [
 ];
 
 const initialUsers = [
+  { user_id: 10, person_id: 999, username: 'developer', email: 'developer@lifelink.system', role: 'DEVELOPER', is_active: true },
   { user_id: 1, person_id: 1, username: 'admin', email: 'vikram.sharma@aiims.edu', role: 'ADMIN', is_active: true },
   { user_id: 2, person_id: 2, username: 'staff_priya', email: 'priya.sundaram@apollo.org', role: 'STAFF', is_active: true },
   { user_id: 3, person_id: 7, username: 'staff_arun', email: 'arun.verma@aiims.edu', role: 'STAFF', is_active: true },

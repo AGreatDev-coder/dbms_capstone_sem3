@@ -272,7 +272,7 @@ const HospitalManagement = () => {
         description="Regional medical centers, specialized inpatient wards, and clinical staff supervision hierarchies enforcing recursive foreign key integrity."
         badge={`${hospitals.length} Affiliated Facilities`}
         action={
-          user?.role === 'ADMIN' && (
+          user?.role === 'DEVELOPER' && (
             <Button
               variant="primary"
               size="md"
@@ -287,6 +287,32 @@ const HospitalManagement = () => {
           )
         }
       />
+
+      {/* Facility Scope / Role Indicator */}
+      {user?.role !== 'DEVELOPER' && user?.hospital_name && (
+        <div className="p-3 border border-rule bg-surface rounded-[2px] flex items-center justify-between text-xs font-mono">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-blood" />
+            <span className="text-muted">Assigned Facility Ledger:</span>
+            <span className="font-semibold text-ink">{user.hospital_name}</span>
+          </div>
+          <span className="text-[10px] uppercase tracking-wider text-muted px-1.5 py-0.5 border border-rule bg-paper">
+            Restricted View &bull; Institution #{user.hospital_id}
+          </span>
+        </div>
+      )}
+      {user?.role === 'DEVELOPER' && (
+        <div className="p-3 border border-moss/40 bg-moss/10 rounded-[2px] flex items-center justify-between text-xs font-mono text-moss">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-moss" />
+            <span className="font-bold">Developer Master View:</span>
+            <span>Universal Cross-Hospital Ledger Access Active</span>
+          </div>
+          <span className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 border border-moss/40 bg-paper text-moss">
+            DEVELOPER ACCESS
+          </span>
+        </div>
+      )}
 
       {feedback && (
         <div
@@ -391,7 +417,7 @@ const HospitalManagement = () => {
                 </p>
               </div>
 
-              {user?.role === 'ADMIN' && (
+              {(user?.role === 'ADMIN' || user?.role === 'DEVELOPER') && (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -447,8 +473,8 @@ const HospitalManagement = () => {
           </section>
         )}
 
-        {/* Staff Supervision Indented Tree (Self-Join Traversal) - Restricted to ADMIN */}
-        {user?.role === 'ADMIN' && (
+        {/* Staff Supervision Indented Tree (Self-Join Traversal) - Restricted to ADMIN and DEVELOPER */}
+        {(user?.role === 'ADMIN' || user?.role === 'DEVELOPER') && (
           <section className="space-y-3" aria-label="Staff Hierarchy">
           <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-2 pb-2 border-b border-rule">
             <div>
@@ -472,7 +498,7 @@ const HospitalManagement = () => {
               <span className="font-mono text-[11px] text-muted tabular-nums">
                 {hierarchy.length} Staff Member{hierarchy.length === 1 ? '' : 's'}
               </span>
-              {selectedHospital && (
+              {user?.role === 'DEVELOPER' && selectedHospital && (
                 <button
                   type="button"
                   onClick={() => {
@@ -488,7 +514,7 @@ const HospitalManagement = () => {
                   Show All Centers
                 </button>
               )}
-              {user?.role === 'ADMIN' && (
+              {(user?.role === 'ADMIN' || user?.role === 'DEVELOPER') && (
                 <Button
                   variant="primary"
                   size="sm"
@@ -581,7 +607,7 @@ const HospitalManagement = () => {
                       <th className="py-2.5 px-3">Hospital Center</th>
                       <th className="py-2.5 px-3">Reports To (Supervisor)</th>
                       <th className="py-2.5 px-3">Hierarchical Tree</th>
-                      {user?.role === 'ADMIN' && (
+                      {(user?.role === 'ADMIN' || user?.role === 'DEVELOPER') && (
                         <th className="py-2.5 px-3 text-right">Actions</th>
                       )}
                     </tr>
@@ -628,7 +654,7 @@ const HospitalManagement = () => {
                               </span>
                             )}
                           </td>
-                          {user?.role === 'ADMIN' && (
+                          {(user?.role === 'ADMIN' || user?.role === 'DEVELOPER') && (
                             <td className="py-2.5 px-3 text-right">
                               <button
                                 type="button"
