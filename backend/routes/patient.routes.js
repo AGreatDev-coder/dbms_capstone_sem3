@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+const { handleMySQLError } = require('../utils/errorHandler');
 
 // Get all patients with search, filtering, sorting, and pagination
 router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
@@ -54,7 +55,7 @@ router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req,
       WHERE ${whereClause}
     `;
     const countResult = await db.query(countSql, params);
-    const total = countResult[0]?.total || 0;
+    const total = Number(countResult[0]?.total) || 0;
 
     // Sorting whitelist
     const allowedSortFields = {
@@ -127,8 +128,7 @@ router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req,
       patients,
     });
   } catch (err) {
-    console.error('Patient retrieve error:', err);
-    res.status(500).json({ success: false, message: 'Failed to retrieve patients from database.' });
+    handleMySQLError(err, res, 'Failed to retrieve patients from database.');
   }
 });
 
@@ -176,7 +176,9 @@ router.get('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'PATIENT'
 
     // RBAC: PATIENT can only view their own record
     if (req.user.role === 'PATIENT') {
-      const isOwner = (req.user.patient_id && req.user.patient_id === patientId) || (req.user.person_id && req.user.person_id === patient.person_id);
+      const isOwner =
+        (req.user.patient_id && Number(req.user.patient_id) === patientId) ||
+        (req.user.person_id && Number(req.user.person_id) === Number(patient.person_id));
       if (!isOwner) {
         return res.status(403).json({
           success: false,
@@ -214,8 +216,7 @@ router.get('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'PATIENT'
       },
     });
   } catch (err) {
-    console.error('Patient detail error:', err);
-    res.status(500).json({ success: false, message: 'Failed to retrieve patient details.' });
+    handleMySQLError(err, res, 'Failed to retrieve patient details.');
   }
 });
 
@@ -223,7 +224,7 @@ router.get('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'PATIENT'
 router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   const conn = await db.getConnection();
   if (!conn) {
-    return res.status(500).json({ success: false, message: 'Database connection unavailable.' });
+    return res.status(500).json({ success: false, message: 'Database connection pool unavailable.' });
   }
 
   try {
@@ -231,38 +232,87 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
       first_name,
       last_name,
       date_of_birth,
-      gender,
+      gender = 'OTHER',
       phone,
       email,
-      address,
-      city,
-      state,
-      pincode,
+      address = 'City Care Ward',
+      city = 'New Delhi',
+      state = 'Delhi',
+      pincode = '110001',
       blood_group,
       emergency_contact_name,
       emergency_contact_phone,
       hospital_id,
       ward_id,
       attending_doctor_id,
-      medical_status,
+      medical_status = 'STABLE',
       medical_notes,
     } = req.body;
 
-    if (!first_name || !last_name || !phone || !blood_group || !hospital_id) {
+    const fields = {};
+    if (!first_name || !first_name.trim()) fields.first_name = 'First name is required.';
+    if (!last_name || !last_name.trim()) fields.last_name = 'Last name is required.';
+    if (!phone || !phone.trim()) fields.phone = 'Phone number is required.';
+    if (!blood_group) fields.blood_group = 'Blood group is required.';
+    if (!hospital_id) fields.hospital_id = 'Hospital is required.';
+
+    if (Object.keys(fields).length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'First name, last name, phone, blood group, and hospital are required.',
+        message: 'Required patient details missing.',
+        fields,
       });
     }
 
     await conn.query('START TRANSACTION');
 
-    // 1. Check or insert Person
-    const [existingPerson] = await conn.query('SELECT person_id FROM Person WHERE phone = ?', [phone]);
+    // 1. Lock Ward and Validate Capacity before admitting
+    if (ward_id) {
+      const [wardRows] = await conn.query(
+        'SELECT ward_id, total_beds, occupied_beds FROM Ward WHERE ward_id = ? FOR UPDATE',
+        [parseInt(ward_id, 10)]
+      );
+
+      if (wardRows.length === 0) {
+        await conn.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: 'Selected ward does not exist.',
+          fields: { ward_id: 'Invalid ward selected.' },
+        });
+      }
+
+      const ward = wardRows[0];
+      if (ward.occupied_beds >= ward.total_beds && medical_status !== 'DISCHARGED') {
+        await conn.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: `Ward is currently at full capacity (${ward.occupied_beds}/${ward.total_beds} beds occupied). Cannot admit patient to this ward.`,
+          fields: { ward_id: 'Ward is at maximum capacity.' },
+        });
+      }
+    }
+
+    // 2. Check or insert Person
+    const [existingPerson] = await conn.query('SELECT person_id FROM Person WHERE phone = ?', [phone.trim()]);
     let personId;
 
     if (existingPerson.length > 0) {
       personId = existingPerson[0].person_id;
+
+      // Check if person already has an ACTIVE patient record
+      const [activePatient] = await conn.query(
+        "SELECT patient_id FROM Patient WHERE person_id = ? AND medical_status != 'DISCHARGED'",
+        [personId]
+      );
+      if (activePatient.length > 0) {
+        await conn.query('ROLLBACK');
+        return res.status(409).json({
+          success: false,
+          message: `Person is already an active admitted inpatient (Patient #${activePatient[0].patient_id}).`,
+          fields: { phone: 'Patient already has an active hospital admission.' },
+        });
+      }
     } else {
       const personInsertSql = `
         INSERT INTO Person 
@@ -270,24 +320,24 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const [personResult] = await conn.query(personInsertSql, [
-        first_name,
-        last_name,
+        first_name.trim(),
+        last_name.trim(),
         date_of_birth || '1990-01-01',
-        gender || 'OTHER',
-        phone,
-        email || `patient_${Date.now()}@lifelink.network`,
-        address || 'Inpatient ward',
-        city || 'Delhi',
-        state || 'Delhi',
-        pincode || '110001',
+        gender,
+        phone.trim(),
+        email?.trim() || `patient_${Date.now()}@lifelink.network`,
+        address?.trim() || 'Inpatient ward',
+        city?.trim() || 'Delhi',
+        state?.trim() || 'Delhi',
+        pincode?.trim() || '110001',
         blood_group,
-        emergency_contact_name || 'Relative',
-        emergency_contact_phone || phone,
+        emergency_contact_name?.trim() || 'Relative',
+        emergency_contact_phone?.trim() || phone.trim(),
       ]);
       personId = personResult.insertId;
     }
 
-    // 2. Insert Patient (Triggers automatically update Ward.occupied_beds)
+    // 3. Insert Patient (Triggers automatically update Ward.occupied_beds)
     const patientInsertSql = `
       INSERT INTO Patient 
       (person_id, hospital_id, ward_id, attending_doctor_id, admission_date, medical_status, medical_notes)
@@ -298,7 +348,7 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
       parseInt(hospital_id, 10),
       ward_id ? parseInt(ward_id, 10) : null,
       attending_doctor_id ? parseInt(attending_doctor_id, 10) : null,
-      medical_status || 'STABLE',
+      medical_status,
       medical_notes || 'Inpatient admission record.',
     ]);
 
@@ -309,22 +359,30 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
     res.status(201).json({
       success: true,
       patient_id: newPatientId,
+      patient: {
+        patient_id: newPatientId,
+        person_id: personId,
+        name: `${first_name.trim()} ${last_name.trim()}`,
+        blood_group,
+        hospital_id: parseInt(hospital_id, 10),
+        ward_id: ward_id ? parseInt(ward_id, 10) : null,
+        medical_status,
+      },
       message: `Patient admitted successfully (Patient ID: ${newPatientId}).`,
     });
   } catch (err) {
     await conn.query('ROLLBACK');
-    console.error('Patient register error:', err);
-    res.status(500).json({ success: false, message: `Failed to register patient: ${err.message}` });
+    handleMySQLError(err, res, 'Failed to admit patient.');
   } finally {
     conn.release();
   }
 });
 
-// Update patient status, ward, or medical notes
+// Update patient status, ward, or discharge
 router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   const conn = await db.getConnection();
   if (!conn) {
-    return res.status(500).json({ success: false, message: 'Database connection unavailable.' });
+    return res.status(500).json({ success: false, message: 'Database connection pool unavailable.' });
   }
 
   try {
@@ -339,9 +397,29 @@ router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (r
 
     await conn.query('START TRANSACTION');
 
+    // If transferring to a different ward, lock and check capacity
+    const newWardId = ward_id !== undefined ? (ward_id ? parseInt(ward_id, 10) : null) : currentPt.ward_id;
+    if (newWardId && newWardId !== currentPt.ward_id && medical_status !== 'DISCHARGED') {
+      const [wardRows] = await conn.query(
+        'SELECT ward_id, total_beds, occupied_beds FROM Ward WHERE ward_id = ? FOR UPDATE',
+        [newWardId]
+      );
+      if (wardRows.length === 0) {
+        await conn.query('ROLLBACK');
+        return res.status(400).json({ success: false, message: 'Target transfer ward does not exist.' });
+      }
+      if (wardRows[0].occupied_beds >= wardRows[0].total_beds) {
+        await conn.query('ROLLBACK');
+        return res.status(400).json({
+          success: false,
+          message: `Target ward is at maximum capacity (${wardRows[0].occupied_beds}/${wardRows[0].total_beds} beds occupied). Cannot transfer.`,
+        });
+      }
+    }
+
     const newDischargeDate = medical_status === 'DISCHARGED'
       ? (discharge_date || new Date().toISOString().split('T')[0])
-      : currentPt.discharge_date;
+      : (medical_status && medical_status !== 'DISCHARGED' ? null : currentPt.discharge_date);
 
     const updatePatientSql = `
       UPDATE Patient 
@@ -355,13 +433,13 @@ router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (r
 
     await conn.query(updatePatientSql, [
       medical_status || null,
-      ward_id !== undefined ? (ward_id ? parseInt(ward_id, 10) : null) : currentPt.ward_id,
+      newWardId,
       newDischargeDate,
       medical_notes || null,
       patientId,
     ]);
 
-    // Optional Person info update
+    // Update Person contact if provided
     if (phone || email || address || city) {
       const updatePersonSql = `
         UPDATE Person 
@@ -379,22 +457,21 @@ router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (r
 
     res.json({
       success: true,
-      message: `Patient ${patientId} updated successfully.`,
+      message: `Patient #${patientId} updated successfully.`,
     });
   } catch (err) {
     await conn.query('ROLLBACK');
-    console.error('Patient update error:', err);
-    res.status(500).json({ success: false, message: `Failed to update patient: ${err.message}` });
+    handleMySQLError(err, res, 'Failed to update patient.');
   } finally {
     conn.release();
   }
 });
 
-// Delete patient with referential integrity verification
+// Delete patient with referential integrity verification (ADMIN only)
 router.delete('/:id', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
   const conn = await db.getConnection();
   if (!conn) {
-    return res.status(500).json({ success: false, message: 'Database connection unavailable.' });
+    return res.status(500).json({ success: false, message: 'Database connection pool unavailable.' });
   }
 
   try {
@@ -432,12 +509,11 @@ router.delete('/:id', authenticateToken, authorizeRoles('ADMIN'), async (req, re
 
     res.json({
       success: true,
-      message: `Patient ${patientId} deleted successfully.`,
+      message: `Patient #${patientId} discharged and archived successfully.`,
     });
   } catch (err) {
     await conn.query('ROLLBACK');
-    console.error('Patient delete error:', err);
-    res.status(500).json({ success: false, message: `Failed to delete patient: ${err.message}` });
+    handleMySQLError(err, res, 'Failed to delete patient.');
   } finally {
     conn.release();
   }

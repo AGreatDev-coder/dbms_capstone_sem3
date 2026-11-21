@@ -7,6 +7,27 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+const { handleMySQLError } = require('../utils/errorHandler');
+
+// Lightweight Hospital Options for Dropdowns (accessible to all authenticated roles)
+router.get('/options', authenticateToken, async (req, res) => {
+  try {
+    const sql = `
+      SELECT hospital_id, hospital_name, city, state, is_active
+      FROM Hospital
+      WHERE is_active = TRUE
+      ORDER BY hospital_name ASC
+    `;
+    const hospitals = await db.query(sql);
+    res.json({
+      success: true,
+      hospitals,
+      data: hospitals,
+    });
+  } catch (err) {
+    handleMySQLError(err, res, 'Failed to retrieve hospital options.');
+  }
+});
 
 // Get all hospitals with aggregate metrics
 router.get('/', async (req, res) => {
@@ -20,8 +41,10 @@ router.get('/', async (req, res) => {
         h.city,
         h.state,
         h.pincode,
-        h.phone,
-        h.email,
+        h.contact_phone AS phone,
+        h.contact_phone,
+        h.contact_email AS email,
+        h.contact_email,
         h.emergency_helpline,
         h.established_year,
         h.is_active,
@@ -37,32 +60,42 @@ router.get('/', async (req, res) => {
     `;
     const hospitals = await db.query(sql);
 
+    // Format numbers as actual numbers
+    const formatted = hospitals.map((h) => ({
+      ...h,
+      ward_count: Number(h.ward_count) || 0,
+      staff_count: Number(h.staff_count) || 0,
+      total_capacity: Number(h.total_capacity) || 0,
+      total_occupied: Number(h.total_occupied) || 0,
+    }));
+
     res.json({
       success: true,
-      count: hospitals.length,
-      hospitals,
+      count: formatted.length,
+      hospitals: formatted,
+      data: formatted,
     });
   } catch (err) {
-    console.error('Hospital list error:', err);
-    res.status(500).json({ success: false, message: 'Failed to retrieve hospitals from database.' });
+    handleMySQLError(err, res, 'Failed to retrieve hospitals from database.');
   }
 });
 
 // Staff Hierarchy Tree using SQL Self-Join on Staff (supervisor_staff_id)
-router.get('/staff-hierarchy', async (req, res) => {
+const getStaffHierarchyHandler = async (req, res) => {
   try {
-    const { hospital_id } = req.query;
+    const hospitalId = req.params.id || req.query.hospital_id;
     const conditions = ['s.is_active = TRUE'];
     const params = [];
 
-    if (hospital_id) {
+    if (hospitalId) {
       conditions.push('s.hospital_id = ?');
-      params.push(parseInt(hospital_id, 10));
+      params.push(parseInt(hospitalId, 10));
     }
 
     const sql = `
       SELECT 
         s.staff_id,
+        s.staff_id AS employee_staff_id,
         s.hospital_id,
         s.ward_id,
         s.supervisor_staff_id,
@@ -72,6 +105,8 @@ router.get('/staff-hierarchy', async (req, res) => {
         s.hire_date,
         s.is_active,
         CONCAT(p.first_name, ' ', p.last_name) AS name,
+        CONCAT(p.first_name, ' ', p.last_name) AS staff_name,
+        CONCAT(p.first_name, ' ', p.last_name) AS employee_name,
         p.first_name,
         p.last_name,
         p.email,
@@ -100,16 +135,36 @@ router.get('/staff-hierarchy', async (req, res) => {
       explanation: 'Computed using SQL Self-Join on Staff table (Staff s LEFT JOIN Staff sup ON s.supervisor_staff_id = sup.staff_id)',
     });
   } catch (err) {
-    console.error('Staff hierarchy error:', err);
-    res.status(500).json({ success: false, message: 'Failed to retrieve staff hierarchy.' });
+    handleMySQLError(err, res, 'Failed to retrieve staff hierarchy.');
   }
-});
+};
+
+router.get('/staff-hierarchy', getStaffHierarchyHandler);
+router.get('/:id/staff-hierarchy', getStaffHierarchyHandler);
 
 // Get single hospital with wards and staff count
 router.get('/:id', async (req, res) => {
   try {
     const hospitalId = parseInt(req.params.id, 10);
-    const sql = 'SELECT * FROM Hospital WHERE hospital_id = ?';
+    const sql = `
+      SELECT 
+        hospital_id,
+        hospital_name,
+        license_number,
+        address,
+        city,
+        state,
+        pincode,
+        contact_phone AS phone,
+        contact_phone,
+        contact_email AS email,
+        contact_email,
+        emergency_helpline,
+        established_year,
+        is_active
+      FROM Hospital 
+      WHERE hospital_id = ?
+    `;
     const rows = await db.query(sql, [hospitalId]);
 
     if (rows.length === 0) {
@@ -127,8 +182,7 @@ router.get('/:id', async (req, res) => {
       },
     });
   } catch (err) {
-    console.error('Hospital detail error:', err);
-    res.status(500).json({ success: false, message: 'Failed to retrieve hospital details.' });
+    handleMySQLError(err, res, 'Failed to retrieve hospital details.');
   }
 });
 
@@ -140,25 +194,32 @@ router.get('/:id/wards', async (req, res) => {
       SELECT 
         w.*,
         (w.total_beds - w.occupied_beds) AS available_beds,
-        ROUND((w.occupied_beds / w.total_beds) * 100, 1) AS occupancy_rate
+        ROUND((w.occupied_beds / NULLIF(w.total_beds, 0)) * 100, 1) AS occupancy_rate
       FROM Ward w
       WHERE w.hospital_id = ?
       ORDER BY w.floor_number, w.ward_name
     `;
     const wards = await db.query(sql, [hospitalId]);
 
+    const formatted = wards.map((w) => ({
+      ...w,
+      total_beds: Number(w.total_beds) || 0,
+      occupied_beds: Number(w.occupied_beds) || 0,
+      available_beds: Number(w.available_beds) || 0,
+      occupancy_rate: Number(w.occupancy_rate) || 0,
+    }));
+
     res.json({
       success: true,
-      count: wards.length,
-      wards,
+      count: formatted.length,
+      wards: formatted,
     });
   } catch (err) {
-    console.error('Wards retrieve error:', err);
-    res.status(500).json({ success: false, message: 'Failed to retrieve wards.' });
+    handleMySQLError(err, res, 'Failed to retrieve wards.');
   }
 });
 
-// Create new hospital
+// Create new hospital (ADMIN only)
 router.post('/', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
   try {
     const {
@@ -169,57 +230,85 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN'), async (req, res) =>
       state,
       pincode,
       phone,
+      contact_phone,
       email,
+      contact_email,
       emergency_helpline,
       established_year,
     } = req.body;
 
-    if (!hospital_name || !license_number || !city || !phone) {
+    const finalPhone = (contact_phone || phone || '').trim();
+    const finalEmail = (contact_email || email || '').trim();
+
+    const fields = {};
+    if (!hospital_name || !hospital_name.trim()) fields.hospital_name = 'Hospital name is required.';
+    if (!license_number || !license_number.trim()) fields.license_number = 'License number is required.';
+    if (!city || !city.trim()) fields.city = 'City is required.';
+    if (!finalPhone) fields.phone = 'Contact phone is required.';
+
+    if (Object.keys(fields).length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Hospital name, license number, city, and phone are required.',
+        message: 'Required hospital fields are missing.',
+        fields,
       });
     }
 
     const sql = `
       INSERT INTO Hospital 
-      (hospital_name, license_number, address, city, state, pincode, phone, email, emergency_helpline, established_year)
+      (hospital_name, license_number, address, city, state, pincode, contact_phone, contact_email, emergency_helpline, established_year)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const result = await db.query(sql, [
-      hospital_name,
-      license_number,
-      address || 'Medical Center Way',
-      city,
-      state || 'State',
-      pincode || '110001',
-      phone,
-      email || `${hospital_name.toLowerCase().replace(/\s+/g, '')}@hospital.org`,
-      emergency_helpline || phone,
+      hospital_name.trim(),
+      license_number.trim(),
+      address?.trim() || 'Medical Center Way',
+      city.trim(),
+      state?.trim() || 'State',
+      pincode?.trim() || '110001',
+      finalPhone,
+      finalEmail || `${hospital_name.toLowerCase().replace(/[^a-z0-9]/g, '')}@hospital.org`,
+      emergency_helpline?.trim() || finalPhone,
       established_year ? parseInt(established_year, 10) : 2010,
     ]);
+
+    const createdHospital = {
+      hospital_id: result.insertId,
+      hospital_name: hospital_name.trim(),
+      license_number: license_number.trim(),
+      city: city.trim(),
+      contact_phone: finalPhone,
+      contact_email: finalEmail,
+    };
 
     res.status(201).json({
       success: true,
       hospital_id: result.insertId,
-      message: `Hospital ${hospital_name} registered successfully.`,
+      hospital: createdHospital,
+      message: `Hospital "${hospital_name}" registered successfully.`,
     });
   } catch (err) {
-    console.error('Create hospital error:', err);
-    res.status(500).json({ success: false, message: `Failed to create hospital: ${err.message}` });
+    handleMySQLError(err, res, 'Failed to create hospital.');
   }
 });
 
-// Create new ward for hospital
+// Create new ward for hospital (ADMIN, STAFF)
 router.post('/:id/wards', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
   try {
     const hospitalId = parseInt(req.params.id, 10);
     const { ward_name, ward_type, floor_number, total_beds } = req.body;
 
-    if (!ward_name || !ward_type || !floor_number || !total_beds) {
+    const fields = {};
+    if (!ward_name || !ward_name.trim()) fields.ward_name = 'Ward name is required.';
+    if (!ward_type) fields.ward_type = 'Ward classification type is required.';
+    if (floor_number === undefined || isNaN(floor_number)) fields.floor_number = 'Floor number is required.';
+    if (!total_beds || parseInt(total_beds, 10) <= 0) fields.total_beds = 'Total beds must be greater than zero.';
+
+    if (Object.keys(fields).length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Ward name, ward type, floor number, and total beds are required.',
+        message: 'Invalid ward input parameters.',
+        fields,
       });
     }
 
@@ -230,20 +319,112 @@ router.post('/:id/wards', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), a
     `;
     const result = await db.query(sql, [
       hospitalId,
-      ward_name,
+      ward_name.trim(),
       ward_type,
       parseInt(floor_number, 10),
       parseInt(total_beds, 10),
     ]);
 
+    const createdWard = {
+      ward_id: result.insertId,
+      hospital_id: hospitalId,
+      ward_name: ward_name.trim(),
+      ward_type,
+      floor_number: parseInt(floor_number, 10),
+      total_beds: parseInt(total_beds, 10),
+      occupied_beds: 0,
+    };
+
     res.status(201).json({
       success: true,
       ward_id: result.insertId,
-      message: `Ward ${ward_name} created successfully.`,
+      ward: createdWard,
+      message: `Ward "${ward_name}" registered successfully.`,
     });
   } catch (err) {
-    console.error('Create ward error:', err);
-    res.status(500).json({ success: false, message: `Failed to create ward: ${err.message}` });
+    handleMySQLError(err, res, 'Failed to create ward.');
+  }
+});
+
+// Add Staff member to hospital (ADMIN only)
+router.post('/:id/staff', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
+  const conn = await db.getConnection();
+  if (!conn) {
+    return res.status(500).json({ success: false, message: 'Database connection pool unavailable.' });
+  }
+
+  try {
+    const hospitalId = parseInt(req.params.id, 10);
+    const {
+      first_name,
+      last_name,
+      phone,
+      email,
+      date_of_birth,
+      gender = 'OTHER',
+      blood_group = 'O+',
+      job_title,
+      department,
+      system_role = 'DOCTOR',
+      ward_id,
+      supervisor_staff_id,
+    } = req.body;
+
+    const fields = {};
+    if (!first_name) fields.first_name = 'First name is required.';
+    if (!last_name) fields.last_name = 'Last name is required.';
+    if (!phone) fields.phone = 'Phone number is required.';
+    if (!job_title) fields.job_title = 'Job title is required.';
+    if (!department) fields.department = 'Department is required.';
+
+    if (Object.keys(fields).length > 0) {
+      return res.status(400).json({ success: false, message: 'Missing required staff fields.', fields });
+    }
+
+    await conn.query('START TRANSACTION');
+
+    // 1. Person supertype
+    const [existingPerson] = await conn.query('SELECT person_id FROM Person WHERE phone = ?', [phone]);
+    let personId;
+
+    if (existingPerson.length > 0) {
+      personId = existingPerson[0].person_id;
+    } else {
+      const [personResult] = await conn.query(
+        `INSERT INTO Person (first_name, last_name, date_of_birth, gender, phone, email, address, city, state, pincode, blood_group)
+         VALUES (?, ?, ?, ?, ?, ?, 'Hospital Staff Quarters', 'Delhi', 'Delhi', '110001', ?)`,
+        [first_name, last_name, date_of_birth || '1985-01-01', gender, phone, email || `staff_${Date.now()}@lifelink.org`, blood_group]
+      );
+      personId = personResult.insertId;
+    }
+
+    // 2. Staff subtype
+    const [staffResult] = await conn.query(
+      `INSERT INTO Staff (person_id, hospital_id, ward_id, supervisor_staff_id, job_title, department, system_role, hire_date, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, CURDATE(), TRUE)`,
+      [
+        personId,
+        hospitalId,
+        ward_id ? parseInt(ward_id, 10) : null,
+        supervisor_staff_id ? parseInt(supervisor_staff_id, 10) : null,
+        job_title,
+        department,
+        system_role,
+      ]
+    );
+
+    await conn.query('COMMIT');
+
+    res.status(201).json({
+      success: true,
+      staff_id: staffResult.insertId,
+      message: `Staff member "${first_name} ${last_name}" registered successfully.`,
+    });
+  } catch (err) {
+    await conn.query('ROLLBACK');
+    handleMySQLError(err, res, 'Failed to add staff member.');
+  } finally {
+    conn.release();
   }
 });
 

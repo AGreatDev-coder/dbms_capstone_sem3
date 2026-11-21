@@ -1,21 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import Modal from '../components/Modal';
-import { BloodGroupPill, StatusBadge, UrgencyBadge } from '../components/Badge';
-import {
-  Clock,
-  Plus,
-  Filter,
-  CheckCircle2,
-  AlertCircle,
-  Database,
-  ArrowRight,
-  ShieldCheck,
-  Droplet,
-  Layers,
-  Sparkles,
-} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { PageHeader } from '../components/common/PageHeader';
+import { PageState } from '../components/common/PageState';
+import { Tabs } from '../components/common/Tabs';
+import { Button } from '../components/common/Button';
+import { Input, Select, Textarea } from '../components/common/FormControls';
+import { StatusDot } from '../components/common/StatusDot';
+import { BloodGroupStamp } from '../components/common/BloodGroupStamp';
+import { Modal } from '../components/common/Modal';
+import { Plus, Check, X } from 'lucide-react';
 
 const BloodRequests = () => {
   const { user } = useAuth();
@@ -27,6 +21,7 @@ const BloodRequests = () => {
   const [hospitals, setHospitals] = useState([]);
   const [patients, setPatients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Filters
   const [urgencyFilter, setUrgencyFilter] = useState('');
@@ -40,6 +35,7 @@ const BloodRequests = () => {
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [allocationNotes, setAllocationNotes] = useState('');
   const [allocationResult, setAllocationResult] = useState(null);
+  const [feedback, setFeedback] = useState(null);
 
   // Create Request Form
   const [requestForm, setRequestForm] = useState({
@@ -50,7 +46,7 @@ const BloodRequests = () => {
     units_required: 1,
     urgency_level: 'CRITICAL',
     required_by_date: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString().slice(0, 16),
-    clinical_indication: 'Urgent perioperative clinical need.',
+    clinical_indication: 'Acute surgical standby.',
   });
 
   useEffect(() => {
@@ -70,17 +66,18 @@ const BloodRequests = () => {
         api.get('/blood-bank/compatibility'),
       ]);
       if (pRes.data?.success) {
-        setPatients(pRes.data.patients);
-        if (pRes.data.patients.length > 0) {
+        const pts = pRes.data.patients || [];
+        setPatients(pts);
+        if (pts.length > 0) {
           setRequestForm((prev) => ({
             ...prev,
-            patient_id: pRes.data.patients[0].patient_id,
-            blood_group: pRes.data.patients[0].blood_group,
+            patient_id: pts[0].patient_id,
+            blood_group: pts[0].blood_group,
           }));
         }
       }
-      if (hRes.data?.success) setHospitals(hRes.data.hospitals);
-      if (cRes.data?.success) setCompatibility(cRes.data.compatibility);
+      if (hRes.data?.success) setHospitals(hRes.data.hospitals || []);
+      if (cRes.data?.success) setCompatibility(cRes.data.compatibility || []);
     } catch (err) {
       console.error('Initial data fetch error:', err);
     }
@@ -89,10 +86,14 @@ const BloodRequests = () => {
   const fetchRankedRequests = async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await api.get('/blood-requests/priority-ranked');
-      if (res.data?.success) setRankedRequests(res.data.requests);
+      if (res.data?.success) {
+        setRankedRequests(res.data.requests || res.data.prioritizedRequests || []);
+      }
     } catch (err) {
       console.error('Ranked requests fetch error:', err);
+      setError('Failed to calculate priority ranking via Query 1 Window Function.');
     } finally {
       setLoading(false);
     }
@@ -101,15 +102,19 @@ const BloodRequests = () => {
   const fetchAllRequests = async () => {
     try {
       setLoading(true);
+      setError(null);
       const params = {};
       if (urgencyFilter) params.urgency = urgencyFilter;
       if (statusFilter) params.status = statusFilter;
       if (hospFilter) params.hospital_id = hospFilter;
 
       const res = await api.get('/blood-requests', { params });
-      if (res.data?.success) setAllRequests(res.data.requests);
+      if (res.data?.success) {
+        setAllRequests(res.data.requests || []);
+      }
     } catch (err) {
       console.error('All requests fetch error:', err);
+      setError('Failed to retrieve blood requests.');
     } finally {
       setLoading(false);
     }
@@ -122,14 +127,14 @@ const BloodRequests = () => {
     setAllocationNotes(`Allocated by clinical staff for request #${reqItem.request_id}`);
 
     try {
-      // Fetch available units
       const res = await api.get('/blood-bank/inventory', {
         params: { storage_status: 'AVAILABLE' },
       });
       if (res.data?.success) {
-        setAvailableUnits(res.data.units);
-        if (res.data.units.length > 0) {
-          setSelectedUnitId(res.data.units[0].unit_id);
+        const units = res.data.units || res.data.inventory || [];
+        setAvailableUnits(units);
+        if (units.length > 0) {
+          setSelectedUnitId(units[0].unit_id);
         }
       }
     } catch (err) {
@@ -155,13 +160,12 @@ const BloodRequests = () => {
         message: res.data.message,
       });
 
-      // Refresh list
       fetchRankedRequests();
       fetchAllRequests();
     } catch (err) {
       setAllocationResult({
         success: false,
-        message: err.response?.data?.message || err.message || 'Transaction aborted.',
+        message: err.response?.data?.message || err.message || 'Transaction aborted by database.',
       });
     }
   };
@@ -172,169 +176,208 @@ const BloodRequests = () => {
       const res = await api.post('/blood-requests', requestForm);
       if (res.data?.success) {
         setIsCreateModalOpen(false);
-        alert(res.data.message);
+        setFeedback({ type: 'success', message: res.data.message });
         fetchRankedRequests();
         fetchAllRequests();
       }
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to create request');
+      setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to create request' });
     }
   };
 
-  // Check compatibility helper for selected unit in modal
+  // Compatibility helper: checks if donorBlood can donate to recipientBlood
+  const checkCompatibility = (donorBlood, recipientBlood) => {
+    if (!donorBlood || !recipientBlood) return false;
+    const match = compatibility.find(
+      (c) => c.donor_blood_group === donorBlood && c.recipient_blood_group === recipientBlood
+    );
+    if (match) return match.is_compatible;
+
+    // Direct fallback ABO law
+    const dClean = donorBlood.replace(/[+-]/g, '');
+    const rClean = recipientBlood.replace(/[+-]/g, '');
+    const dRh = donorBlood.includes('+') ? '+' : '-';
+    const rRh = recipientBlood.includes('+') ? '+' : '-';
+
+    const aboValid =
+      dClean === 'O' ||
+      dClean === rClean ||
+      rClean === 'AB' ||
+      (dClean === 'A' && rClean === 'AB') ||
+      (dClean === 'B' && rClean === 'AB');
+
+    const rhValid = dRh === '-' || rRh === '+';
+    return aboValid && rhValid;
+  };
+
   const selectedUnit = availableUnits.find((u) => u.unit_id === parseInt(selectedUnitId, 10));
-  const isCompatibleSelection =
+  const isSelectedCompatible =
     selectedUnit && selectedRequestForAlloc
-      ? compatibility.some(
-          (c) =>
-            c.donor_blood_group === selectedUnit.blood_group &&
-            c.recipient_blood_group === selectedRequestForAlloc.blood_group &&
-            c.is_compatible
-        )
+      ? checkCompatibility(selectedUnit.blood_group, selectedRequestForAlloc.blood_group)
       : false;
+
+  const tabs = [
+    { id: 'ranked', label: 'Priority Requisition Queue (Window DENSE_RANK)', count: rankedRequests.length },
+    { id: 'all', label: 'All Registered Requisitions', count: allRequests.length },
+  ];
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Blood Requests & Priority Allocation</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Window function priority ranking with ACID row-locking transactions for inventory allocation.
-          </p>
-        </div>
+      <PageHeader
+        breadcrumb="Clinical Blood Supply Chain"
+        title="Blood Requests & Priority Allocation"
+        description="Facility-specific priority ranking powered by DENSE_RANK() window partitions, and ACID transactional allocation secured by SELECT ... FOR UPDATE exclusive locks."
+        badge={`${rankedRequests.length} Active Queue Items`}
+        action={
+          <Button
+            variant="primary"
+            size="md"
+            onClick={() => setIsCreateModalOpen(true)}
+          >
+            <Plus className="w-3.5 h-3.5 mr-1" />
+            <span>Create Requisition</span>
+          </Button>
+        }
+      />
 
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Create Blood Request</span>
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 text-xs">
-        <button
-          onClick={() => setActiveTab('ranked')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'ranked'
-              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+      {feedback && (
+        <div
+          className={`p-3 border rounded-[2px] text-xs font-mono flex items-center justify-between ${
+            feedback.type === 'success'
+              ? 'border-moss/40 bg-moss/10 text-moss'
+              : 'border-blood/40 bg-blood-soft/20 text-blood'
           }`}
         >
-          <Database className="w-4 h-4 text-indigo-600" />
-          <span>Query 1: Urgency Priority Ranking (Window Function)</span>
-          <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-indigo-200 text-indigo-900 font-bold">
-            {rankedRequests.length}
-          </span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('all')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'all'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Layers className="w-4 h-4" />
-          <span>All Clinical Requests ({allRequests.length})</span>
-        </button>
-      </div>
-
-      {/* TAB 1: QUERY 1 PRIORITY RANKING WINDOW FUNCTION */}
-      {activeTab === 'ranked' && (
-        <div className="space-y-4">
-          <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-950 flex items-start gap-3">
-            <Sparkles className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold">Query 1: Window Function – Urgency Ranking (DENSE_RANK() OVER PARTITION BY hospital_id)</p>
-              <p className="text-indigo-800 mt-0.5 leading-relaxed">
-                Computes a facility-specific priority queue for all active requests. Medical urgency is weighted as the primary ordering factor,
-                with elapsed waiting time as the secondary deterministic tie-breaker.
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-indigo-50/50 border-b border-indigo-200 text-indigo-900 uppercase tracking-wider font-semibold">
-                    <th className="py-3 px-4">Hospital Priority Rank</th>
-                    <th className="py-3 px-4">Hospital Facility</th>
-                    <th className="py-3 px-4">Request #</th>
-                    <th className="py-3 px-4">Patient Name</th>
-                    <th className="py-3 px-4">Blood Group</th>
-                    <th className="py-3 px-4">Component</th>
-                    <th className="py-3 px-4">Units Required</th>
-                    <th className="py-3 px-4">Urgency Triage</th>
-                    <th className="py-3 px-4">Waiting Time</th>
-                    <th className="py-3 px-4 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {rankedRequests.map((reqItem) => (
-                    <tr key={reqItem.request_id} className="hover:bg-slate-50/50">
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full font-bold font-mono text-xs ${
-                          reqItem.hospital_priority_rank === 1
-                            ? 'bg-rose-600 text-white shadow-sm'
-                            : reqItem.hospital_priority_rank === 2
-                            ? 'bg-amber-500 text-white'
-                            : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          #{reqItem.hospital_priority_rank}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 font-semibold text-slate-800">{reqItem.hospital_name}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">Req #{reqItem.request_id}</td>
-                      <td className="py-3 px-4 font-medium text-slate-800">{reqItem.patient_name}</td>
-                      <td className="py-3 px-4">
-                        <BloodGroupPill bloodGroup={reqItem.blood_group} />
-                      </td>
-                      <td className="py-3 px-4 text-slate-600">{reqItem.component_type}</td>
-                      <td className="py-3 px-4 font-bold text-slate-900">{reqItem.units_required} unit(s)</td>
-                      <td className="py-3 px-4">
-                        <UrgencyBadge urgency={reqItem.urgency_level} />
-                      </td>
-                      <td className="py-3 px-4 font-mono text-slate-600">
-                        {reqItem.waiting_time_hours} hours elapsed
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
-                          <button
-                            onClick={() => handleOpenAllocate(reqItem)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm transition-colors"
-                          >
-                            <Droplet className="w-3.5 h-3.5" />
-                            <span>Allocate Unit (Q9)</span>
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <span>{feedback.message}</span>
+          <button
+            onClick={() => setFeedback(null)}
+            className="text-xs hover:opacity-75 ml-2 font-bold"
+          >
+            &times;
+          </button>
         </div>
       )}
 
-      {/* TAB 2: ALL CLINICAL REQUESTS */}
+      {/* Tabs */}
+      <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
+
+      {/* TAB 1: PRIORITY RANKED QUEUE (THE STAR) */}
+      {activeTab === 'ranked' && (
+        <div className="space-y-4">
+          <div className="p-4 bg-surface border border-rule rounded-[2px] text-xs space-y-1">
+            <p className="font-mono text-[11px] uppercase tracking-wider text-ink font-semibold">
+              Query 1 &bull; Window Function Priority Ranking (DENSE_RANK() OVER PARTITION BY hospital_id)
+            </p>
+            <p className="text-muted leading-relaxed">
+              Medical urgency serves as the primary ordering criterion (CRITICAL &rarr; HIGH &rarr; MEDIUM &rarr; ROUTINE),
+              with elapsed waiting time as the secondary deterministic tiebreaker.
+            </p>
+          </div>
+
+          <PageState
+            loading={loading}
+            error={error}
+            empty={rankedRequests.length === 0}
+            emptyTitle="Priority queue is clear"
+            emptyDescription="There are no pending unfulfilled blood requisitions currently active in the database."
+            onRetry={fetchRankedRequests}
+          >
+            <div className="border border-rule rounded-[2px] bg-surface overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-paper border-b border-rule font-mono text-[11px] uppercase tracking-wider text-muted">
+                    <th className="py-2.5 px-3">Rank</th>
+                    <th className="py-2.5 px-3">Hospital Center</th>
+                    <th className="py-2.5 px-3">Req ID</th>
+                    <th className="py-2.5 px-3">Patient Legal Name</th>
+                    <th className="py-2.5 px-3">Phenotype</th>
+                    <th className="py-2.5 px-3">Component Needed</th>
+                    <th className="py-2.5 px-3 text-right">Units</th>
+                    <th className="py-2.5 px-3">Urgency Triage</th>
+                    <th className="py-2.5 px-3">Waiting Elapsed</th>
+                    <th className="py-2.5 px-3 text-right">Allocation</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rule font-mono tabular-nums">
+                  {rankedRequests.map((reqItem) => {
+                    const isRankOne = reqItem.hospital_priority_rank === 1;
+
+                    return (
+                      <tr
+                        key={reqItem.request_id}
+                        className={`transition-colors ${
+                          isRankOne ? 'bg-[#FCF9F3] hover:bg-paper' : 'hover:bg-paper'
+                        }`}
+                      >
+                        <td className="py-2.5 px-3 font-semibold">
+                          <span
+                            className={`inline-block px-1.5 py-0.2 border rounded-[2px] text-[11px] ${
+                              isRankOne
+                                ? 'border-blood text-blood font-bold bg-blood-soft/20'
+                                : 'border-rule text-muted bg-paper'
+                            }`}
+                          >
+                            #{reqItem.hospital_priority_rank}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 font-sans font-medium text-ink">
+                          {reqItem.hospital_name}
+                        </td>
+                        <td className="py-2.5 px-3 text-muted">
+                          #{reqItem.request_id}
+                        </td>
+                        <td className="py-2.5 px-3 font-sans text-ink">
+                          {reqItem.patient_name}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <BloodGroupStamp bloodGroup={reqItem.blood_group} size="sm" />
+                        </td>
+                        <td className="py-2.5 px-3 font-sans text-muted">
+                          {reqItem.component_type}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-semibold text-ink">
+                          {reqItem.units_required} unit(s)
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <StatusDot status={reqItem.urgency_level} />
+                        </td>
+                        <td className="py-2.5 px-3 text-muted text-[11px]">
+                          {reqItem.waiting_time_hours !== undefined
+                            ? `${reqItem.waiting_time_hours}h elapsed`
+                            : 'Active'}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => handleOpenAllocate(reqItem)}
+                            >
+                              Allocate Bag
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </PageState>
+        </div>
+      )}
+
+      {/* TAB 2: ALL REQUISITIONS WITH FILTER */}
       {activeTab === 'all' && (
         <div className="space-y-4">
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-3 text-xs">
-            <div className="flex items-center gap-1.5 text-slate-500 font-semibold">
-              <Filter className="w-3.5 h-3.5" />
-              <span>Filters:</span>
-            </div>
+          <div className="p-3 bg-surface border border-rule rounded-[2px] flex flex-wrap items-center gap-3 text-xs">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-muted">Filters:</span>
 
             <select
               value={urgencyFilter}
               onChange={(e) => setUrgencyFilter(e.target.value)}
-              className="px-3 py-1.5 border rounded-lg bg-slate-50 text-slate-700 font-medium focus:outline-none"
+              className="px-2 py-1.5 bg-paper border border-rule text-xs text-ink rounded-[2px] focus:outline-none"
             >
               <option value="">All Urgencies</option>
               <option value="CRITICAL">Critical</option>
@@ -346,7 +389,7 @@ const BloodRequests = () => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-1.5 border rounded-lg bg-slate-50 text-slate-700 font-medium focus:outline-none"
+              className="px-2 py-1.5 bg-paper border border-rule text-xs text-ink rounded-[2px] focus:outline-none"
             >
               <option value="">All Statuses</option>
               <option value="PENDING">Pending</option>
@@ -358,7 +401,7 @@ const BloodRequests = () => {
             <select
               value={hospFilter}
               onChange={(e) => setHospFilter(e.target.value)}
-              className="px-3 py-1.5 border rounded-lg bg-slate-50 text-slate-700 font-medium focus:outline-none"
+              className="px-2 py-1.5 bg-paper border border-rule text-xs text-ink rounded-[2px] focus:outline-none"
             >
               <option value="">All Hospitals</option>
               {hospitals.map((h) => (
@@ -367,48 +410,59 @@ const BloodRequests = () => {
             </select>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+          <PageState
+            loading={loading}
+            error={error}
+            empty={allRequests.length === 0}
+            emptyTitle="No requisitions located"
+            emptyDescription="No blood requests found under active filter criteria."
+            onRetry={fetchAllRequests}
+          >
+            <div className="border border-rule rounded-[2px] bg-surface overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold">
-                    <th className="py-3 px-4">Request #</th>
-                    <th className="py-3 px-4">Patient Name</th>
-                    <th className="py-3 px-4">Hospital</th>
-                    <th className="py-3 px-4">Blood Group</th>
-                    <th className="py-3 px-4">Component</th>
-                    <th className="py-3 px-4">Units Needed</th>
-                    <th className="py-3 px-4">Allocated</th>
-                    <th className="py-3 px-4">Urgency</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Action</th>
+                  <tr className="bg-paper border-b border-rule font-mono text-[11px] uppercase tracking-wider text-muted">
+                    <th className="py-2.5 px-3">Req ID</th>
+                    <th className="py-2.5 px-3">Patient Legal Name</th>
+                    <th className="py-2.5 px-3">Facility</th>
+                    <th className="py-2.5 px-3">Phenotype</th>
+                    <th className="py-2.5 px-3">Component</th>
+                    <th className="py-2.5 px-3 text-right">Demanded</th>
+                    <th className="py-2.5 px-3 text-right">Allocated</th>
+                    <th className="py-2.5 px-3">Urgency</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3 text-right">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-rule font-mono tabular-nums">
                   {allRequests.map((reqItem) => (
-                    <tr key={reqItem.request_id} className="hover:bg-slate-50/50">
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">#{reqItem.request_id}</td>
-                      <td className="py-3 px-4 font-medium text-slate-800">{reqItem.patient_name}</td>
-                      <td className="py-3 px-4 text-slate-600">{reqItem.hospital_name}</td>
-                      <td className="py-3 px-4">
-                        <BloodGroupPill bloodGroup={reqItem.blood_group} />
+                    <tr key={reqItem.request_id} className="hover:bg-paper transition-colors">
+                      <td className="py-2 px-3 font-semibold text-ink">
+                        #{reqItem.request_id}
                       </td>
-                      <td className="py-3 px-4 text-slate-600 font-medium">{reqItem.component_type}</td>
-                      <td className="py-3 px-4 font-bold text-slate-900">{reqItem.units_required}</td>
-                      <td className="py-3 px-4 font-bold text-purple-600">{reqItem.allocated_units_count} units</td>
-                      <td className="py-3 px-4">
-                        <UrgencyBadge urgency={reqItem.urgency_level} />
+                      <td className="py-2 px-3 font-sans text-ink">{reqItem.patient_name}</td>
+                      <td className="py-2 px-3 font-sans text-muted text-[11px]">{reqItem.hospital_name}</td>
+                      <td className="py-2 px-3">
+                        <BloodGroupStamp bloodGroup={reqItem.blood_group} size="sm" />
                       </td>
-                      <td className="py-3 px-4">
-                        <StatusBadge status={reqItem.request_status} />
+                      <td className="py-2 px-3 font-sans text-muted">{reqItem.component_type}</td>
+                      <td className="py-2 px-3 text-right font-medium text-ink">{reqItem.units_required}</td>
+                      <td className="py-2 px-3 text-right font-semibold text-moss">
+                        {reqItem.allocated_units_count || 0}
                       </td>
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-2 px-3">
+                        <StatusDot status={reqItem.urgency_level} />
+                      </td>
+                      <td className="py-2 px-3">
+                        <StatusDot status={reqItem.request_status} />
+                      </td>
+                      <td className="py-2 px-3 text-right">
                         {(user?.role === 'ADMIN' || user?.role === 'STAFF') && reqItem.request_status !== 'FULFILLED' && (
                           <button
                             onClick={() => handleOpenAllocate(reqItem)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded bg-emerald-600 text-white hover:bg-emerald-700"
+                            className="text-xs text-blood hover:text-blood-hover underline underline-offset-2 font-sans"
                           >
-                            <span>Allocate</span>
+                            Allocate
                           </button>
                         )}
                       </td>
@@ -417,247 +471,228 @@ const BloodRequests = () => {
                 </tbody>
               </table>
             </div>
-          </div>
+          </PageState>
         </div>
       )}
 
-      {/* Query 9: Allocate Blood Unit Modal (ACID Transaction) */}
+      {/* ACID Unit Allocation Modal */}
       <Modal
         isOpen={isAllocateModalOpen}
         onClose={() => setIsAllocateModalOpen(false)}
-        title="Execute Transactional Blood Allocation (Query 9 ACID Procedure)"
+        title="Execute Unit Allocation (Query 9 ACID Procedure)"
+        subtitle={
+          selectedRequestForAlloc
+            ? `Request #${selectedRequestForAlloc.request_id} &bull; ${selectedRequestForAlloc.patient_name} (${selectedRequestForAlloc.blood_group} ${selectedRequestForAlloc.component_type})`
+            : ''
+        }
       >
-        <form onSubmit={handleExecuteAllocation} className="space-y-4 text-xs">
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
-            <div className="flex justify-between items-center">
-              <span className="font-bold text-slate-800">Target Request #{selectedRequestForAlloc?.request_id}</span>
-              <UrgencyBadge urgency={selectedRequestForAlloc?.urgency_level} />
+        <form onSubmit={handleExecuteAllocation} className="space-y-4">
+          <div className="p-3 bg-paper border border-rule rounded-[2px] space-y-1.5 text-xs font-mono">
+            <div className="flex justify-between">
+              <span className="text-muted">Target Recipient Phenotype:</span>
+              <BloodGroupStamp bloodGroup={selectedRequestForAlloc?.blood_group} size="sm" />
             </div>
-            <div className="flex justify-between text-slate-600">
-              <span>Patient: <strong>{selectedRequestForAlloc?.patient_name}</strong></span>
-              <span>Recipient Blood Group: <BloodGroupPill bloodGroup={selectedRequestForAlloc?.blood_group} /></span>
+            <div className="flex justify-between">
+              <span className="text-muted">Required Component:</span>
+              <span className="text-ink font-sans font-medium">{selectedRequestForAlloc?.component_type}</span>
             </div>
-            <div className="flex justify-between text-slate-600">
-              <span>Required: {selectedRequestForAlloc?.units_required} unit(s) of {selectedRequestForAlloc?.component_type}</span>
-              <span>Facility: {selectedRequestForAlloc?.hospital_name}</span>
+            <div className="flex justify-between">
+              <span className="text-muted">Required Units:</span>
+              <span className="text-ink font-semibold">{selectedRequestForAlloc?.units_required} bag(s)</span>
             </div>
           </div>
 
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Select Available Blood Unit for Allocation *</label>
-            <select
-              required
-              value={selectedUnitId}
-              onChange={(e) => setSelectedUnitId(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-            >
-              {availableUnits.map((u) => (
-                <option key={u.unit_id} value={u.unit_id}>
-                  Unit #{u.unit_id} | Group: {u.blood_group} | {u.component_type} | Expires: {u.expiry_date} ({u.hospital_name})
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* Unit Selector showing compatible vs incompatible units struck through */}
+          <div className="space-y-1.5">
+            <label className="block text-xs font-medium text-ink">
+              Select Cold Storage Unit to Allocate:
+            </label>
+            <div className="border border-rule rounded-[2px] bg-paper max-h-48 overflow-y-auto divide-y divide-rule font-mono text-xs">
+              {availableUnits.length === 0 ? (
+                <p className="p-3 text-muted">No units currently cataloged as AVAILABLE.</p>
+              ) : (
+                availableUnits.map((u) => {
+                  const comp = selectedRequestForAlloc
+                    ? checkCompatibility(u.blood_group, selectedRequestForAlloc.blood_group)
+                    : false;
+                  const isChosen = parseInt(selectedUnitId, 10) === u.unit_id;
 
-          {/* Real-time Compatibility Matrix Verification Check */}
-          {selectedUnit && (
-            <div className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
-              isCompatibleSelection ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-rose-50 border-rose-200 text-rose-900'
-            }`}>
-              <div className="flex items-center gap-2">
-                {isCompatibleSelection ? (
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 text-rose-600" />
-                )}
-                <div>
-                  <p className="font-bold">
-                    {isCompatibleSelection ? 'Blood Compatibility Verified' : 'Incompatible Blood Groups Warning!'}
-                  </p>
-                  <p className="text-[11px] opacity-90">
-                    Donor Unit ({selectedUnit.blood_group}) &rarr; Recipient ({selectedRequestForAlloc.blood_group})
-                  </p>
-                </div>
-              </div>
-              <span className="font-mono font-bold text-xs uppercase px-2 py-0.5 rounded bg-white">
-                {isCompatibleSelection ? 'COMPATIBLE' : 'INCOMPATIBLE'}
-              </span>
+                  return (
+                    <div
+                      key={u.unit_id}
+                      onClick={() => setSelectedUnitId(u.unit_id)}
+                      className={`p-2.5 flex items-center justify-between cursor-pointer transition-colors ${
+                        isChosen
+                          ? 'bg-surface font-semibold text-ink border-l-2 border-blood'
+                          : comp
+                          ? 'hover:bg-surface text-ink'
+                          : 'opacity-50 line-through text-muted hover:opacity-75'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="radio"
+                          name="unitSelection"
+                          checked={isChosen}
+                          onChange={() => setSelectedUnitId(u.unit_id)}
+                          className="text-blood focus:ring-0"
+                        />
+                        <span>Unit #{u.unit_id} &bull; {u.component_type} &bull; Exp: {u.expiry_date}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <BloodGroupStamp bloodGroup={u.blood_group} size="sm" />
+                        {comp ? (
+                          <span className="text-[10px] text-moss flex items-center gap-0.5">
+                            <Check className="w-3 h-3" /> Compatible
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-blood flex items-center gap-0.5">
+                            <X className="w-3 h-3" /> Incompatible
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
-          )}
-
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Staff Allocation Notes & Traceability</label>
-            <input
-              type="text"
-              value={allocationNotes}
-              onChange={(e) => setAllocationNotes(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-            />
           </div>
 
-          {/* Transaction Outcome Alert */}
+          <Textarea
+            label="Allocation Authorization Notes"
+            rows={2}
+            value={allocationNotes}
+            onChange={(e) => setAllocationNotes(e.target.value)}
+          />
+
+          {/* Result Alert: Shows success or database trigger prevention */}
           {allocationResult && (
-            <div className={`p-3 rounded-lg border text-xs ${
-              allocationResult.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'
-            }`}>
-              <p className="font-bold">{allocationResult.success ? 'COMMIT SUCCESSFUL' : 'TRANSACTION ROLLBACK'}</p>
+            <div
+              className={`p-3 border rounded-[2px] font-mono text-xs ${
+                allocationResult.success
+                  ? 'border-moss/40 bg-moss/10 text-moss'
+                  : 'border-blood/40 bg-blood-soft/20 text-blood'
+              }`}
+            >
+              <p className="font-semibold">{allocationResult.success ? 'COMMIT Successful:' : 'Database SIGNAL Exception:'}</p>
               <p className="mt-0.5">{allocationResult.message}</p>
             </div>
           )}
 
-          <div className="pt-4 border-t flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setIsAllocateModalOpen(false)}
-              className="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50"
-            >
+          <div className="pt-3 border-t border-rule flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setIsAllocateModalOpen(false)}>
               Close
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
-              disabled={!isCompatibleSelection}
-              className={`px-4 py-2 font-bold rounded-lg text-white shadow-sm transition-all ${
-                isCompatibleSelection ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-400 cursor-not-allowed'
-              }`}
+              variant="primary"
+              disabled={!selectedUnitId || !isSelectedCompatible}
             >
-              Execute ACID Allocation
-            </button>
+              Commit Transaction (FOR UPDATE)
+            </Button>
           </div>
         </form>
       </Modal>
 
-      {/* Create Blood Request Modal */}
-      <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Create Inpatient Blood Transfusion Request">
-        <form onSubmit={handleCreateRequest} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Target Patient *</label>
-            <select
-              required
-              value={requestForm.patient_id}
-              onChange={(e) => {
-                const ptId = parseInt(e.target.value, 10);
-                const pt = patients.find((p) => p.patient_id === ptId);
-                setRequestForm({
-                  ...requestForm,
-                  patient_id: ptId,
-                  blood_group: pt ? pt.blood_group : requestForm.blood_group,
-                });
-              }}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
+      {/* Create Request Modal */}
+      <Modal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        title="Submit Clinical Blood Requisition"
+        subtitle="Places new requisition into MySQL BloodRequest queue"
+      >
+        <form onSubmit={handleCreateRequest} className="space-y-3.5">
+          <Select
+            label="Inpatient Recipient"
+            value={requestForm.patient_id}
+            onChange={(e) => {
+              const pid = e.target.value;
+              const pt = patients.find((p) => String(p.patient_id) === String(pid));
+              setRequestForm({
+                ...requestForm,
+                patient_id: pid,
+                blood_group: pt ? pt.blood_group : requestForm.blood_group,
+              });
+            }}
+          >
+            {patients.map((p) => (
+              <option key={p.patient_id} value={p.patient_id}>
+                #{p.patient_id} &bull; {p.first_name} {p.last_name} ({p.blood_group}) &bull; {p.hospital_name}
+              </option>
+            ))}
+          </Select>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Select
+              label="Ordering Hospital Facility"
+              value={requestForm.hospital_id}
+              onChange={(e) => setRequestForm({ ...requestForm, hospital_id: parseInt(e.target.value, 10) })}
             >
-              {patients.map((p) => (
-                <option key={p.patient_id} value={p.patient_id}>
-                  #{p.patient_id} - {p.name} ({p.blood_group}) - {p.hospital_name}
-                </option>
+              {hospitals.map((h) => (
+                <option key={h.hospital_id} value={h.hospital_id}>{h.hospital_name}</option>
               ))}
-            </select>
+            </Select>
+
+            <Select
+              label="Phenotype Requested"
+              value={requestForm.blood_group}
+              onChange={(e) => setRequestForm({ ...requestForm, blood_group: e.target.value })}
+            >
+              {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
+                <option key={bg} value={bg}>{bg}</option>
+              ))}
+            </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Requested Blood Group *</label>
-              <select
-                value={requestForm.blood_group}
-                onChange={(e) => setRequestForm({ ...requestForm, blood_group: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none font-bold"
-              >
-                {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
-                  <option key={bg} value={bg}>{bg}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Component Type *</label>
-              <select
-                value={requestForm.component_type}
-                onChange={(e) => setRequestForm({ ...requestForm, component_type: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                <option value="WHOLE_BLOOD">Whole Blood</option>
-                <option value="RBC">Packed RBC</option>
-                <option value="PLATELETS">Platelets</option>
-                <option value="PLASMA">Fresh Frozen Plasma</option>
-                <option value="CRYO">Cryoprecipitate</option>
-              </select>
-            </div>
-          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <Select
+              label="Component Type"
+              value={requestForm.component_type}
+              onChange={(e) => setRequestForm({ ...requestForm, component_type: e.target.value })}
+            >
+              <option value="WHOLE_BLOOD">Whole Blood</option>
+              <option value="RBC">Packed RBC</option>
+              <option value="PLATELETS">Platelets</option>
+              <option value="PLASMA">Fresh Frozen Plasma</option>
+              <option value="CRYO">Cryoprecipitate</option>
+            </Select>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Units Required (CHECK &gt; 0) *</label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={requestForm.units_required}
-                onChange={(e) => setRequestForm({ ...requestForm, units_required: parseInt(e.target.value, 10) })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Urgency Level Triage *</label>
-              <select
-                value={requestForm.urgency_level}
-                onChange={(e) => setRequestForm({ ...requestForm, urgency_level: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none font-bold text-rose-700"
-              >
-                <option value="CRITICAL">CRITICAL (Immediate)</option>
-                <option value="HIGH">HIGH (&lt; 6 Hours)</option>
-                <option value="MEDIUM">MEDIUM (&lt; 24 Hours)</option>
-                <option value="ROUTINE">ROUTINE (Elective Standby)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Hospital Facility *</label>
-              <select
-                value={requestForm.hospital_id}
-                onChange={(e) => setRequestForm({ ...requestForm, hospital_id: parseInt(e.target.value, 10) })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                {hospitals.map((h) => (
-                  <option key={h.hospital_id} value={h.hospital_id}>{h.hospital_name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Required By Timestamp *</label>
-              <input
-                type="datetime-local"
-                required
-                value={requestForm.required_by_date}
-                onChange={(e) => setRequestForm({ ...requestForm, required_by_date: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Clinical Indication</label>
-            <textarea
-              rows="2"
-              value={requestForm.clinical_indication}
-              onChange={(e) => setRequestForm({ ...requestForm, clinical_indication: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
+            <Input
+              label="Units Required"
+              type="number"
+              min="1"
+              max="10"
+              required
+              value={requestForm.units_required}
+              onChange={(e) => setRequestForm({ ...requestForm, units_required: parseInt(e.target.value, 10) })}
             />
+
+            <Select
+              label="Urgency Triage"
+              value={requestForm.urgency_level}
+              onChange={(e) => setRequestForm({ ...requestForm, urgency_level: e.target.value })}
+            >
+              <option value="CRITICAL">Critical (Immediate)</option>
+              <option value="HIGH">High (&lt; 6 hrs)</option>
+              <option value="MEDIUM">Medium (&lt; 24 hrs)</option>
+              <option value="ROUTINE">Routine Standby</option>
+            </Select>
           </div>
 
-          <div className="pt-4 border-t flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setIsCreateModalOpen(false)}
-              className="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50"
-            >
+          <Textarea
+            label="Clinical Indication & Diagnosis"
+            rows={2}
+            value={requestForm.clinical_indication}
+            onChange={(e) => setRequestForm({ ...requestForm, clinical_indication: e.target.value })}
+          />
+
+          <div className="pt-3 border-t border-rule flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setIsCreateModalOpen(false)}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-brand-600 text-white font-bold rounded-lg hover:bg-brand-700 shadow-sm"
-            >
-              Submit Blood Request
-            </button>
+            </Button>
+            <Button type="submit" variant="primary">
+              Submit Requisition
+            </Button>
           </div>
         </form>
       </Modal>
@@ -666,4 +701,3 @@ const BloodRequests = () => {
 };
 
 export default BloodRequests;
-

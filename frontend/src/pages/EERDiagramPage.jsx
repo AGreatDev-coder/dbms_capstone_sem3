@@ -1,84 +1,49 @@
 import React, { useState } from 'react';
-import { Network, FileText, Code, CheckCircle2, ShieldCheck, Layers, GitMerge, Download, ExternalLink } from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
+import Tabs from '../components/common/Tabs';
+import Button from '../components/common/Button';
+import { Download, ExternalLink, Network, FileText, Code2 } from 'lucide-react';
 
 const EERDiagramPage = () => {
   const [activeTab, setActiveTab] = useState('diagram');
 
+  const tabs = [
+    { id: 'diagram', label: 'Visual Diagram (eer_diagram.png)' },
+    { id: 'concepts', label: 'Schema Architecture & Justifications' },
+    { id: 'mermaid', label: 'Mermaid Source (eer_diagram.mmd)' },
+  ];
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2.5">
-            <Network className="w-7 h-7 text-indigo-600" />
-            <span>Enhanced Entity-Relationship (EER) Architecture</span>
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Complete conceptual data model, specialization hierarchies, aggregation modeling, and relational constraints.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
+      <PageHeader
+        breadcrumbs={['10 ARCHITECTURE', 'EER SPECIFICATION']}
+        title="Enhanced Entity-Relationship (EER) Architecture"
+        description="Conceptual data model, specialization hierarchies, aggregation modeling, and relational constraints."
+        action={
           <a
             href="/api/database-artifacts/eer_diagram.png"
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-900 text-white hover:bg-black transition-colors"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Open Full-Res PNG</span>
+            <Button variant="secondary" size="sm" icon={ExternalLink}>
+              Open High-Res PNG
+            </Button>
           </a>
-        </div>
-      </div>
+        }
+      />
 
       {/* Tabs */}
-      <div className="flex flex-wrap items-center gap-1 sm:gap-2 border-b border-slate-200 text-xs">
-        <button
-          onClick={() => setActiveTab('diagram')}
-          className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'diagram'
-              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Network className="w-4 h-4 shrink-0" />
-          <span>Visual Diagram (eer_diagram.png)</span>
-        </button>
+      <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
-        <button
-          onClick={() => setActiveTab('concepts')}
-          className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'concepts'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <FileText className="w-4 h-4 shrink-0" />
-          <span>Schema Documentation & Justification</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('mermaid')}
-          className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'mermaid'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Code className="w-4 h-4 shrink-0" />
-          <span>Mermaid Source (eer_diagram.mmd)</span>
-        </button>
-      </div>
-
-      {/* TAB 1: VISUAL EER DIAGRAM */}
+      {/* Tab 1: Visual Diagram */}
       {activeTab === 'diagram' && (
         <div className="space-y-6">
-          <figure className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm overflow-hidden flex flex-col items-center">
-            <div className="w-full overflow-x-auto flex justify-center bg-slate-50 rounded-xl p-2 border border-slate-100">
+          <figure className="border border-rule bg-surface p-4 flex flex-col items-center">
+            <div className="w-full overflow-x-auto flex justify-center bg-paper p-2 border border-rule">
               <img
                 src="/api/database-artifacts/eer_diagram.png"
-                alt="LIFE-LINK Enhanced Entity-Relationship (EER) Architecture Diagram"
-                className="w-full h-auto rounded-lg shadow-sm border border-slate-200 max-h-[850px] object-contain mx-auto transition-all"
+                alt="LIFE-LINK Enhanced Entity-Relationship Architecture Diagram"
+                className="w-full h-auto border border-rule max-h-[850px] object-contain mx-auto"
                 loading="lazy"
                 onError={(e) => {
                   if (!e.target.dataset.triedFallback) {
@@ -88,112 +53,145 @@ const EERDiagramPage = () => {
                 }}
               />
             </div>
-            <figcaption className="text-center mt-3 text-xs text-slate-500 font-medium">
-              <span className="font-semibold text-slate-700">Figure 1.1:</span> LIFE-LINK Normalized Relational Schema & Overlapping Specialization Hierarchy (Resolution: 2400 x 1800 px, 300 DPI)
+            <figcaption className="text-center mt-3 text-xs text-muted font-mono">
+              Figure 1.1: LIFE-LINK Normalized Relational Schema & Overlapping Specialization Hierarchy (300 DPI)
             </figcaption>
           </figure>
 
           {/* Core EER Concepts Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-stretch">
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-2">
-              <div className="flex items-center gap-2 text-indigo-600 font-bold text-xs uppercase tracking-wider">
-                <Layers className="w-4 h-4" />
-                <span>Overlapping Specialization</span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="border border-rule bg-surface p-4 space-y-2 font-sans">
+              <div className="font-mono text-[10px] text-muted uppercase tracking-wider font-semibold">
+                Pattern 01
               </div>
-              <h3 className="text-sm font-bold text-slate-900">Person Supertype & Subtypes</h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                `Person` serves as the supertype entity. `Donor`, `Patient`, and `Staff` inherit through 1:0..1 foreign keys.
-                A single person can simultaneously hold multiple roles without duplicating demographic data.
+              <h3 className="font-serif text-base font-semibold text-ink">
+                Overlapping Specialization
+              </h3>
+              <p className="text-xs text-muted leading-relaxed">
+                <code className="font-mono text-ink">Person</code> serves as the supertype entity. 
+                <code className="font-mono text-ink">Donor</code>, <code className="font-mono text-ink">Patient</code>, and 
+                <code className="font-mono text-ink">Staff</code> inherit through 1:0..1 foreign keys. 
+                A single person can hold multiple roles simultaneously without duplicating demographic data.
               </p>
             </div>
 
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-2">
-              <div className="flex items-center gap-2 text-teal-600 font-bold text-xs uppercase tracking-wider">
-                <Network className="w-4 h-4" />
-                <span>EER Aggregation Modeling</span>
+            <div className="border border-rule bg-surface p-4 space-y-2 font-sans">
+              <div className="font-mono text-[10px] text-muted uppercase tracking-wider font-semibold">
+                Pattern 02
               </div>
-              <h3 className="text-sm font-bold text-slate-900">Donation Camp Drive Object</h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                `DonationCamp` aggregated with registered participants (`CampDonorRegistration`) forms a higher-level organizational entity
-                that directly yields batch collection activities (`BloodDonation`).
+              <h3 className="font-serif text-base font-semibold text-ink">
+                EER Aggregation Modeling
+              </h3>
+              <p className="text-xs text-muted leading-relaxed">
+                <code className="font-mono text-ink">DonationCamp</code> aggregated with participants 
+                via <code className="font-mono text-ink">CampDonorRegistration</code> forms a higher-level 
+                organizational drive entity that directly yields batch collection activities.
               </p>
             </div>
 
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-2">
-              <div className="flex items-center gap-2 text-rose-600 font-bold text-xs uppercase tracking-wider">
-                <GitMerge className="w-4 h-4" />
-                <span>M:N Junction & Row Locking</span>
+            <div className="border border-rule bg-surface p-4 space-y-2 font-sans">
+              <div className="font-mono text-[10px] text-muted uppercase tracking-wider font-semibold">
+                Pattern 03
               </div>
-              <h3 className="text-sm font-bold text-slate-900">BloodAllocation Junction</h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Resolves the M:N relationship between `BloodRequest` and `BloodUnit`.
-                Enforces `UNIQUE(unit_id)` so a bag cannot be double-allocated, secured by ACID row locking.
+              <h3 className="font-serif text-base font-semibold text-ink">
+                M:N Junction & Row Locking
+              </h3>
+              <p className="text-xs text-muted leading-relaxed">
+                <code className="font-mono text-ink">BloodAllocation</code> resolves the M:N relationship between 
+                requests and units. Enforces <code className="font-mono text-ink">UNIQUE(unit_id)</code> so a bag 
+                cannot be double-allocated, secured by ACID row locking.
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB 2: SCHEMA DOCUMENTATION & JUSTIFICATIONS */}
+      {/* Tab 2: Schema Documentation & Justifications */}
       {activeTab === 'concepts' && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6 text-xs leading-relaxed text-slate-700">
-          <div>
-            <h2 className="text-base font-bold text-slate-900 pb-2 border-b border-slate-100">
+        <div className="border border-rule bg-surface p-6 space-y-6 text-xs text-ink leading-relaxed font-sans">
+          <div className="pb-3 border-b border-rule">
+            <h2 className="font-serif text-lg font-semibold text-ink">
               Relational Schema Architecture & Design Justifications
             </h2>
+            <p className="text-xs text-muted mt-0.5">
+              Academic rationale for normalization, table structures, and integrity constraints.
+            </p>
           </div>
 
-          <div className="space-y-4">
-            <h3 className="text-sm font-bold text-indigo-700">1. Person Specialization Hierarchy</h3>
-            <p>
+          <div className="space-y-3">
+            <h3 className="font-serif text-sm font-semibold text-blood">
+              1. Person Specialization Hierarchy
+            </h3>
+            <p className="text-muted">
               In healthcare management, modeling human actors requires balancing strict normalization with clinical reality.
               LIFE-LINK implements <strong>Overlapping Specialization</strong> using subtype extension tables:
             </p>
-            <ul className="list-disc pl-5 space-y-1.5 text-slate-600">
-              <li><strong>Person Supertype:</strong> Houses immutable demographics (name, DOB, gender, phone, email, address, confirmed ABO/Rh group).</li>
-              <li><strong>Donor Subtype:</strong> References `Person(person_id)` with `UNIQUE` constraint; tracks donor type, availability status, deferral reasons.</li>
-              <li><strong>Patient Subtype:</strong> References `Person(person_id)` with `UNIQUE` constraint; tracks admission date, assigned ward, and medical status.</li>
-              <li><strong>Staff Subtype:</strong> References `Person(person_id)` with `UNIQUE` constraint; tracks hospital employment, department, and supervisory hierarchy.</li>
+            <ul className="list-disc pl-5 space-y-1.5 text-muted">
+              <li>
+                <strong className="text-ink">Person Supertype:</strong> Houses immutable demographics (name, DOB, gender, phone, email, address, confirmed ABO/Rh group).
+              </li>
+              <li>
+                <strong className="text-ink">Donor Subtype:</strong> References <code className="font-mono text-ink">Person(person_id)</code> with <code className="font-mono text-ink">UNIQUE</code> constraint; tracks donor type, availability, deferral reasons.
+              </li>
+              <li>
+                <strong className="text-ink">Patient Subtype:</strong> References <code className="font-mono text-ink">Person(person_id)</code> with <code className="font-mono text-ink">UNIQUE</code> constraint; tracks admission date, assigned ward, and medical status.
+              </li>
+              <li>
+                <strong className="text-ink">Staff Subtype:</strong> References <code className="font-mono text-ink">Person(person_id)</code> with <code className="font-mono text-ink">UNIQUE</code> constraint; tracks hospital employment, department, and supervisory hierarchy.
+              </li>
             </ul>
-            <p className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-slate-600">
-              <strong>Justification:</strong> Enforcing disjoint specialization would make it impossible for a hospital doctor to donate blood, or for a voluntary donor to be treated as an admitted patient, without creating duplicate person rows. Overlapping specialization via subtype tables eliminates redundancy while preserving referential integrity.
-            </p>
+            <div className="p-3 border border-rule bg-paper text-muted">
+              <strong className="text-ink">Design Justification:</strong> Enforcing disjoint specialization would make it impossible for a hospital doctor to donate blood, or for a voluntary donor to be treated as an admitted patient, without creating duplicate person rows. Overlapping specialization via subtype tables eliminates redundancy while preserving referential integrity.
+            </div>
           </div>
 
-          <div className="space-y-4 pt-4 border-t border-slate-100">
-            <h3 className="text-sm font-bold text-teal-700">2. Donation Camp Aggregation</h3>
-            <p>
+          <div className="space-y-3 pt-4 border-t border-rule">
+            <h3 className="font-serif text-sm font-semibold text-blood">
+              2. Donation Camp Aggregation
+            </h3>
+            <p className="text-muted">
               Aggregation is an abstraction where an entire relationship is treated as a higher-level composite object:
             </p>
-            <ul className="list-disc pl-5 space-y-1.5 text-slate-600">
-              <li>The relationship between `DonationCamp` and `Donor` (resolved by `CampDonorRegistration`) constitutes a <strong>Donation Drive Aggregation</strong>.</li>
-              <li>This aggregated drive object directly generates collection activities (`BloodDonation` where `donation_camp_id` is linked), which generate stored inventory bags (`BloodUnit`).</li>
+            <ul className="list-disc pl-5 space-y-1.5 text-muted">
+              <li>
+                The relationship between <code className="font-mono text-ink">DonationCamp</code> and <code className="font-mono text-ink">Donor</code> (resolved by <code className="font-mono text-ink">CampDonorRegistration</code>) constitutes a <strong>Donation Drive Aggregation</strong>.
+              </li>
+              <li>
+                This aggregated drive object directly generates collection activities (<code className="font-mono text-ink">BloodDonation</code> where <code className="font-mono text-ink">donation_camp_id</code> is linked), which generate stored inventory bags (<code className="font-mono text-ink">BloodUnit</code>).
+              </li>
             </ul>
           </div>
 
-          <div className="space-y-4 pt-4 border-t border-slate-100">
-            <h3 className="text-sm font-bold text-rose-700">3. Integrity Constraints & Concurrency Control</h3>
-            <p>
-              The relational schema strictly enforces integrity through database-level constraints:
-            </p>
-            <ul className="list-disc pl-5 space-y-1.5 text-slate-600">
-              <li><strong>CHECK (occupied_beds &le; total_beds):</strong> Prevents ward overcrowding. Managed via automated database triggers on patient admission/discharge.</li>
-              <li><strong>CHECK (expiry_date &ge; donation_date):</strong> Enforces temporal validity on perishable blood components.</li>
-              <li><strong>UNIQUE (unit_id) on BloodAllocation:</strong> Strictly ensures that an available blood unit is allocated at most once.</li>
-              <li><strong>Row-Level Locking (`SELECT ... FOR UPDATE`):</strong> In `sp_allocate_blood_unit`, concurrent allocations acquire exclusive row locks on the unit and request rows, eliminating double-allocation race conditions.</li>
+          <div className="space-y-3 pt-4 border-t border-rule">
+            <h3 className="font-serif text-sm font-semibold text-blood">
+              3. Integrity Constraints & Concurrency Control
+            </h3>
+            <ul className="list-disc pl-5 space-y-1.5 text-muted">
+              <li>
+                <strong className="text-ink">CHECK (occupied_beds &le; total_beds):</strong> Prevents ward overcrowding. Managed via automated database triggers on patient admission and discharge.
+              </li>
+              <li>
+                <strong className="text-ink">CHECK (expiry_date &ge; donation_date):</strong> Enforces temporal validity on perishable blood components.
+              </li>
+              <li>
+                <strong className="text-ink">UNIQUE (unit_id) on BloodAllocation:</strong> Strictly ensures that an available blood unit is allocated at most once.
+              </li>
+              <li>
+                <strong className="text-ink">Row-Level Locking (SELECT ... FOR UPDATE):</strong> In <code className="font-mono text-ink">sp_allocate_blood_unit</code>, concurrent allocations acquire exclusive row locks on the unit and request rows, eliminating double-allocation race conditions.
+              </li>
             </ul>
           </div>
         </div>
       )}
 
-      {/* TAB 3: MERMAID CODE VIEWER */}
+      {/* Tab 3: Mermaid Source */}
       {activeTab === 'mermaid' && (
-        <div className="bg-slate-950 rounded-xl border border-slate-800 p-5 overflow-hidden">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800 text-xs font-mono text-slate-400">
+        <div className="border border-rule bg-paper p-4 font-mono text-xs">
+          <div className="flex items-center justify-between pb-3 border-b border-rule text-muted text-[11px]">
             <span>database/eer_diagram.mmd</span>
-            <span className="text-emerald-400">Mermaid ER Diagram Source</span>
+            <span className="text-moss">Mermaid Schema Source</span>
           </div>
-          <pre className="mt-4 text-xs font-mono text-emerald-400 overflow-x-auto leading-relaxed">
+          <pre className="mt-3 text-ink overflow-x-auto leading-relaxed text-[11px]">
 {`erDiagram
     PERSON ||--o| DONOR : "specializes to (0..1)"
     PERSON ||--o| PATIENT : "specializes to (0..1)"
@@ -230,4 +228,3 @@ const EERDiagramPage = () => {
 };
 
 export default EERDiagramPage;
-

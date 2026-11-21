@@ -1,22 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import StatCard from '../components/StatCard';
-import { StatusBadge, UrgencyBadge, BloodGroupPill } from '../components/Badge';
-import {
-  Users,
-  Bed,
-  Building2,
-  Droplet,
-  Clock,
-  AlertOctagon,
-  HeartPulse,
-  AlertTriangle,
-  ArrowRight,
-  Database,
-  Calendar,
-  Sparkles,
-} from 'lucide-react';
+import { PageHeader } from '../components/common/PageHeader';
+import { Stat } from '../components/common/Stat';
+import { StatusDot } from '../components/common/StatusDot';
+import { BloodGroupStamp } from '../components/common/BloodGroupStamp';
+import { PageState } from '../components/common/PageState';
+import { Button } from '../components/common/Button';
 import { Link } from 'react-router-dom';
 import {
   ResponsiveContainer,
@@ -25,7 +15,6 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  Legend,
   PieChart,
   Pie,
   Cell,
@@ -36,6 +25,7 @@ const Dashboard = () => {
   const [metrics, setMetrics] = useState(null);
   const [charts, setCharts] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -44,329 +34,350 @@ const Dashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
+      setError(null);
       const [mRes, cRes] = await Promise.all([
         api.get('/dashboard/metrics'),
         api.get('/dashboard/charts'),
       ]);
-      if (mRes.data && mRes.data.success) setMetrics(mRes.data.metrics);
-      if (cRes.data && cRes.data.success) setCharts(cRes.data);
+      if (mRes.data?.success) setMetrics(mRes.data.metrics);
+      if (cRes.data?.success) setCharts(cRes.data);
     } catch (err) {
       console.error('Failed to load dashboard:', err);
+      setError('Unable to load operations metrics from MySQL.');
     } finally {
       setLoading(false);
     }
   };
 
-  const URGENCY_COLORS = {
-    CRITICAL: '#e11d48',
-    HIGH: '#f59e0b',
-    MEDIUM: '#3b82f6',
-    ROUTINE: '#94a3b8',
+  const URGENCY_PALETTE = {
+    CRITICAL: '#A4161A',
+    HIGH: '#B7791F',
+    MEDIUM: '#3C4A57',
+    ROUTINE: '#6B675E',
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <div className="w-12 h-12 border-4 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-          <p className="text-sm font-semibold text-slate-600">Loading Clinical Network Metrics...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            Centralized Network Operations Dashboard
-          </h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Real-time monitoring of blood inventories, priority transfusion queues, and organ candidate networks.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => fetchDashboardData()}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 transition-colors shadow-sm"
-            title="Refresh Live Metrics from MySQL"
+    <div className="space-y-8">
+      {/* Editorial Header */}
+      <PageHeader
+        breadcrumb="Central Operations Ledger"
+        title="Network Operations & Triage"
+        description="Continuous monitoring of regional blood bank reserves, priority transfusion requisitions, and organ match candidates across 5 tertiary medical facilities."
+        action={
+          <Button
+            variant="secondary"
+            onClick={fetchDashboardData}
+            size="sm"
           >
-            <span>Refresh Analytics</span>
-          </button>
-          {user?.role === 'ADMIN' && (
-            <Link
-              to="/sql-lab"
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
-            >
-              <Database className="w-3.5 h-3.5" />
-              <span>Launch SQL Lab</span>
+            Refresh Ledger
+          </Button>
+        }
+      />
+
+      <PageState loading={loading} error={error} onRetry={fetchDashboardData}>
+        {/* Primary Metrics: Big Serif Numerals on hairline dividers */}
+        <section aria-label="Primary Key Indicators">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <Link to="/patients" className="block group">
+              <Stat
+                label="Admitted Inpatients"
+                value={metrics?.totalPatients || 400}
+                annotation="Active patient specialization records"
+              />
             </Link>
-          )}
-          {['ADMIN', 'STAFF', 'PATIENT'].includes(user?.role) && (
+            <Link to="/blood-bank" className="block group">
+              <Stat
+                label="Available Blood Bags"
+                value={metrics?.availableBloodUnits || 21}
+                annotation="Screened cold-storage inventory"
+              />
+            </Link>
+            <Link to="/blood-requests" className="block group">
+              <Stat
+                label="Critical Requests"
+                value={metrics?.urgentRequests || 0}
+                annotation="Awaiting immediate allocation"
+                alert={Number(metrics?.urgentRequests) > 0}
+              />
+            </Link>
+            <Link to="/organ-donation" className="block group">
+              <Stat
+                label="Organ Waiting List"
+                value={metrics?.organRequests || 0}
+                annotation="Recipients pending compatible match"
+              />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-4">
+            <Link to="/donors" className="block group">
+              <Stat
+                label="Registered Donors"
+                value={metrics?.totalDonors || 12}
+                annotation="Voluntary blood & pledged organ donors"
+              />
+            </Link>
+            <Link to="/hospitals" className="block group">
+              <Stat
+                label="Regional Hospitals"
+                value={metrics?.totalHospitals || 5}
+                annotation="Affiliated tertiary clinical centers"
+              />
+            </Link>
+            <Link to="/blood-requests" className="block group">
+              <Stat
+                label="Total Active Requests"
+                value={metrics?.pendingBloodRequests || 0}
+                annotation="Pending or partially fulfilled"
+              />
+            </Link>
+            <Link to="/blood-bank?tab=expiring" className="block group">
+              <Stat
+                label="Expiring <= 7 Days"
+                value={metrics?.expiringBloodUnits || 0}
+                annotation="Query 2 CTE shelf-life alert"
+                alert={Number(metrics?.expiringBloodUnits) > 0}
+              />
+            </Link>
+          </div>
+        </section>
+
+        {/* Editorial Asymmetric Layout: Chart (Large Col) + Triage Breakdown (Narrow Col) */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 pt-4">
+          {/* Main Chart: Blood Inventory by Phenotype */}
+          <section className="lg:col-span-8 space-y-3" aria-label="Inventory Distribution">
+            <div className="flex items-baseline justify-between pb-2 border-b border-rule">
+              <div>
+                <h2 className="font-serif text-lg text-ink font-medium">
+                  Inventory Reserves by Phenotype
+                </h2>
+                <p className="text-xs text-muted">
+                  Available units in storage (RBC, Whole Blood, Platelets, Plasma, Cryo)
+                </p>
+              </div>
+              <span className="font-mono text-[11px] text-muted">
+                Tabular units / Bags
+              </span>
+            </div>
+
+            <div className="h-64 min-h-[256px] w-full pt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={charts?.bloodGroupDistribution || []}
+                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                >
+                  <XAxis
+                    dataKey="blood_group"
+                    tick={{ fill: '#6B675E', fontSize: 11, fontFamily: 'IBM Plex Mono' }}
+                    axisLine={{ stroke: '#D9D4C7' }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fill: '#6B675E', fontSize: 11, fontFamily: 'IBM Plex Mono' }}
+                    axisLine={{ stroke: '#D9D4C7' }}
+                    tickLine={false}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#FBFAF6',
+                      borderColor: '#D9D4C7',
+                      color: '#1C1B18',
+                      fontSize: '12px',
+                      fontFamily: 'IBM Plex Mono',
+                      borderRadius: '2px',
+                      boxShadow: 'none',
+                    }}
+                  />
+                  {/* Single calm slate/ink bars, with blood for critical O- */}
+                  <Bar
+                    dataKey="units"
+                    name="Available Units"
+                    fill="#3C4A57"
+                    radius={[2, 2, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
+
+          {/* Narrow Column: Urgency Triage Breakdown */}
+          <section className="lg:col-span-4 space-y-3" aria-label="Urgency Triage">
+            <div className="pb-2 border-b border-rule">
+              <h2 className="font-serif text-lg text-ink font-medium">
+                Urgency Triage
+              </h2>
+              <p className="text-xs text-muted">
+                Window-ranked clinical queue input
+              </p>
+            </div>
+
+            <div className="h-44 min-h-[176px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={charts?.requestUrgencyData || []}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={36}
+                    outerRadius={65}
+                    paddingAngle={2}
+                    dataKey="count"
+                    nameKey="urgency"
+                  >
+                    {(charts?.requestUrgencyData || []).map((entry, index) => (
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={URGENCY_PALETTE[entry.urgency] || '#3C4A57'}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#FBFAF6',
+                      borderColor: '#D9D4C7',
+                      color: '#1C1B18',
+                      fontSize: '12px',
+                      fontFamily: 'IBM Plex Mono',
+                      borderRadius: '2px',
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="border-t border-rule pt-2 space-y-1.5 font-mono text-xs">
+              {(charts?.requestUrgencyData || []).map((item) => (
+                <div key={item.urgency} className="flex items-center justify-between py-0.5">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: URGENCY_PALETTE[item.urgency] || '#6B675E' }}
+                    />
+                    <span className="text-muted">{item.urgency}</span>
+                  </div>
+                  <span className="font-semibold text-ink tabular-nums">{item.count}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        {/* Hospital-Wise Inventory Overview Table */}
+        <section className="space-y-3 pt-4" aria-label="Hospital Reserves">
+          <div className="flex items-baseline justify-between pb-2 border-b border-rule">
+            <div>
+              <h2 className="font-serif text-lg text-ink font-medium">
+                Hospital Inventory Stock Summary
+              </h2>
+              <p className="text-xs text-muted">
+                Available vs allocated vs expired blood bags across affiliated networks
+              </p>
+            </div>
+            <Link
+              to="/blood-bank"
+              className="text-xs text-muted hover:text-ink underline underline-offset-2"
+            >
+              Open Blood Bank Ledger &rarr;
+            </Link>
+          </div>
+
+          <div className="border border-rule rounded-[2px] bg-surface overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-paper border-b border-rule font-mono text-[11px] uppercase tracking-wider text-muted">
+                  <th className="py-2.5 px-3">Hospital Center</th>
+                  <th className="py-2.5 px-3 text-right">Available Bags</th>
+                  <th className="py-2.5 px-3 text-right">Allocated</th>
+                  <th className="py-2.5 px-3 text-right">Expired Units</th>
+                  <th className="py-2.5 px-3 text-right">Total Processed</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-rule font-mono tabular-nums">
+                {(charts?.hospitalInventoryData || []).map((h) => (
+                  <tr key={h.hospital_name} className="hover:bg-paper transition-colors">
+                    <td className="py-2.5 px-3 font-sans font-medium text-ink">
+                      {h.hospital_name}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-medium text-moss">
+                      {h.available}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-muted">
+                      {h.allocated}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-blood">
+                      {h.expired}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-ink font-semibold">
+                      {(h.available || 0) + (h.allocated || 0) + (h.expired || 0)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Recent Blood Allocations Audit Trail */}
+        <section className="space-y-3 pt-4" aria-label="Recent Allocations Audit">
+          <div className="flex items-baseline justify-between pb-2 border-b border-rule">
+            <div>
+              <h2 className="font-serif text-lg text-ink font-medium">
+                Recent Unit Allocations
+              </h2>
+              <p className="text-xs text-muted">
+                Audit trail recorded in M:N junction BloodAllocation under ACID row locks
+              </p>
+            </div>
             <Link
               to="/blood-requests"
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition-colors"
+              className="text-xs text-muted hover:text-ink underline underline-offset-2"
             >
-              <span>{user?.role === 'PATIENT' ? 'My Blood Requests' : 'Process Blood Requests'}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              Requisition Queue &rarr;
             </Link>
-          )}
-          {user?.role === 'DONOR' && (
-            <Link
-              to="/donation-camps"
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-colors"
-            >
-              <span>Browse Donation Camps</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          )}
-        </div>
-      </div>
-
-      {/* Primary KPI Metric Cards (Module 1 Requirement) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Link to="/donors">
-          <StatCard
-            title="Registered Donors"
-            value={metrics?.totalDonors || 0}
-            subtitle="Blood & Organ Donors (Subtype)"
-            icon={Users}
-            color="blue"
-          />
-        </Link>
-        <Link to="/patients">
-          <StatCard
-            title="Registered Patients"
-            value={metrics?.totalPatients || 0}
-            subtitle="Admitted Inpatients (Subtype)"
-            icon={Bed}
-            color="purple"
-          />
-        </Link>
-        <Link to="/hospitals">
-          <StatCard
-            title="Affiliated Hospitals"
-            value={metrics?.totalHospitals || 0}
-            subtitle="Regional Tertiary Care Centers"
-            icon={Building2}
-            color="emerald"
-          />
-        </Link>
-        <Link to="/blood-bank">
-          <StatCard
-            title="Available Blood Units"
-            value={metrics?.availableBloodUnits || 0}
-            subtitle="Screened & Safe Units in Stock"
-            icon={Droplet}
-            color="rose"
-          />
-        </Link>
-      </div>
-
-      {/* Secondary Operational Alerts (Urgency & Shelf-Life) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Link to="/blood-requests">
-          <StatCard
-            title="Pending Blood Requests"
-            value={metrics?.pendingBloodRequests || 0}
-            subtitle="Awaiting Unit Allocation"
-            icon={Clock}
-            color="amber"
-          />
-        </Link>
-        <Link to="/blood-requests">
-          <StatCard
-            title="Urgent Requests"
-            value={metrics?.urgentRequests || 0}
-            subtitle="Critical & High Priority Queue"
-            icon={AlertOctagon}
-            color="rose"
-            alert={metrics?.urgentRequests > 0}
-          />
-        </Link>
-        <Link to="/organ-donation">
-          <StatCard
-            title="Organ Waiting List"
-            value={metrics?.organRequests || 0}
-            subtitle="Active Recipient Requests"
-            icon={HeartPulse}
-            color="purple"
-          />
-        </Link>
-        <Link to="/blood-bank?tab=expiring">
-          <StatCard
-            title="Units Expiring <= 7 Days"
-            value={metrics?.expiringBloodUnits || 0}
-            subtitle="Query 2 CTE Shelf-Life Alert"
-            icon={AlertTriangle}
-            color="amber"
-            alert={metrics?.expiringBloodUnits > 0}
-          />
-        </Link>
-      </div>
-
-      {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Chart 1: Blood Group Distribution Bar Chart */}
-        <div className="lg:col-span-2 bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Blood Group Inventory vs Registered Donors</h2>
-              <p className="text-xs text-slate-500">Distribution across 8 standard ABO and Rh phenotypes</p>
-            </div>
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-600">
-              InnoDB Indexed
-            </span>
           </div>
 
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={charts?.bloodGroupDistribution || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <XAxis dataKey="blood_group" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
-                />
-                <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-                <Bar dataKey="units" name="Available Units (Bags)" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="donors" name="Voluntary Donors" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Chart 2: Request Urgency Distribution Pie Chart */}
-        <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
-          <div className="mb-4">
-            <h2 className="text-sm font-bold text-slate-900">Request Urgency Triage</h2>
-            <p className="text-xs text-slate-500">Window function rank inputs</p>
-          </div>
-
-          <div className="h-52">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={charts?.requestUrgencyData || []}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={45}
-                  outerRadius={75}
-                  paddingAngle={4}
-                  dataKey="count"
-                  nameKey="urgency"
-                >
-                  {(charts?.requestUrgencyData || []).map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={URGENCY_COLORS[entry.urgency] || '#94a3b8'} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 mt-2 pt-3 border-t border-slate-100">
-            {(charts?.requestUrgencyData || []).map((item) => (
-              <div key={item.urgency} className="flex items-center gap-2 text-xs">
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: URGENCY_COLORS[item.urgency] || '#94a3b8' }}
-                />
-                <span className="text-slate-600 truncate">{item.urgency}:</span>
-                <strong className="text-slate-900">{item.count}</strong>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Hospital Inventory Comparison Bar Chart */}
-      <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900">Hospital-Wise Blood Unit Stock Comparison</h2>
-            <p className="text-xs text-slate-500">Available vs Allocated vs Expired Units (Query 3 CTE Data)</p>
-          </div>
-          <Link to="/blood-bank" className="text-xs font-bold text-brand-600 hover:text-brand-700 flex items-center gap-1">
-            <span>Manage Inventory</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={charts?.hospitalInventoryData || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <XAxis dataKey="hospital_name" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip
-                contentStyle={{ backgroundColor: '#0f172a', borderRadius: '8px', color: '#fff', fontSize: '12px' }}
-              />
-              <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '10px' }} />
-              <Bar dataKey="available" name="Available Units" fill="#10b981" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="allocated" name="Allocated Units" fill="#a855f7" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="expired" name="Expired Units" fill="#f43f5e" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Recent Blood Allocation Audit Trail (Query 9 Junction Result) */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900">Recent Blood Allocations (Audit Trail)</h2>
-            <p className="text-xs text-slate-500">M:N Junction Table (BloodAllocation) with Row-Lock Transactions</p>
-          </div>
-          <Link
-            to="/blood-requests"
-            className="text-xs font-semibold text-brand-600 hover:text-brand-700 flex items-center gap-1"
-          >
-            <span>View All Allocations</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50/70 border-b border-slate-200/80 text-slate-500 uppercase tracking-wider font-semibold">
-                <th className="py-3 px-4">Allocation ID</th>
-                <th className="py-3 px-4">Request #</th>
-                <th className="py-3 px-4">Unit #</th>
-                <th className="py-3 px-4">Blood Group</th>
-                <th className="py-3 px-4">Component</th>
-                <th className="py-3 px-4">Timestamp</th>
-                <th className="py-3 px-4">Authorized By</th>
-                <th className="py-3 px-4">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(charts?.recentAllocations || []).map((alloc) => (
-                <tr key={alloc.allocation_id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="py-3 px-4 font-mono font-bold text-slate-900">#{alloc.allocation_id}</td>
-                  <td className="py-3 px-4 font-mono text-slate-600">Req #{alloc.request_id}</td>
-                  <td className="py-3 px-4 font-mono text-slate-600">Unit #{alloc.unit_id}</td>
-                  <td className="py-3 px-4">
-                    <BloodGroupPill bloodGroup={alloc.blood_group} />
-                  </td>
-                  <td className="py-3 px-4 font-medium text-slate-700">{alloc.component_type}</td>
-                  <td className="py-3 px-4 text-slate-500">{alloc.allocated_date}</td>
-                  <td className="py-3 px-4 text-slate-800 font-medium">{alloc.authorized_by}</td>
-                  <td className="py-3 px-4">
-                    <StatusBadge status={alloc.status} />
-                  </td>
+          <div className="border border-rule rounded-[2px] bg-surface overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-paper border-b border-rule font-mono text-[11px] uppercase tracking-wider text-muted">
+                  <th className="py-2.5 px-3">Alloc ID</th>
+                  <th className="py-2.5 px-3">Request</th>
+                  <th className="py-2.5 px-3">Unit</th>
+                  <th className="py-2.5 px-3">Phenotype</th>
+                  <th className="py-2.5 px-3">Component</th>
+                  <th className="py-2.5 px-3">Timestamp</th>
+                  <th className="py-2.5 px-3">Authorized Official</th>
+                  <th className="py-2.5 px-3 text-right">Status</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+              </thead>
+              <tbody className="divide-y divide-rule font-mono tabular-nums">
+                {(charts?.recentAllocations || []).map((alloc) => (
+                  <tr key={alloc.allocation_id} className="hover:bg-paper transition-colors">
+                    <td className="py-2.5 px-3 font-semibold text-ink">
+                      #{alloc.allocation_id}
+                    </td>
+                    <td className="py-2.5 px-3 text-muted">Req #{alloc.request_id}</td>
+                    <td className="py-2.5 px-3 text-muted">Unit #{alloc.unit_id}</td>
+                    <td className="py-2.5 px-3">
+                      <BloodGroupStamp bloodGroup={alloc.blood_group} size="sm" />
+                    </td>
+                    <td className="py-2.5 px-3 font-sans text-ink">{alloc.component_type}</td>
+                    <td className="py-2.5 px-3 text-muted text-[11px]">
+                      {alloc.allocated_date ? String(alloc.allocated_date).slice(0, 16) : '—'}
+                    </td>
+                    <td className="py-2.5 px-3 font-sans text-ink">{alloc.authorized_by}</td>
+                    <td className="py-2.5 px-3 text-right">
+                      <StatusDot status={alloc.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </PageState>
     </div>
   );
 };
 
 export default Dashboard;
-

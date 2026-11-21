@@ -1,8 +1,9 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
+import ErrorBoundary from './components/common/ErrorBoundary';
 
 // Pages
 import Dashboard from './pages/Dashboard';
@@ -18,17 +19,16 @@ import DBMSLearningLab from './pages/DBMSLearningLab';
 import EERDiagramPage from './pages/EERDiagramPage';
 import Login from './pages/Login';
 
-import { ShieldAlert, ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
-
 const MainLayout = ({ children }) => {
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
+    <div className="min-h-screen flex flex-col bg-paper text-ink">
       <Navbar />
       <div className="flex flex-1 flex-col md:flex-row">
         <Sidebar />
         <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl mx-auto w-full overflow-y-auto">
-          {children}
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
         </main>
       </div>
     </div>
@@ -37,27 +37,23 @@ const MainLayout = ({ children }) => {
 
 const AccessDenied = ({ allowedRoles = [], userRole }) => {
   return (
-    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-      <div className="w-16 h-16 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mb-4 shadow-sm border border-rose-200">
-        <ShieldAlert className="w-8 h-8" />
-      </div>
-      <span className="text-xs font-mono font-bold uppercase tracking-wider px-2.5 py-1 rounded bg-rose-50 text-rose-700 border border-rose-200 mb-2">
-        HTTP 403 FORBIDDEN &bull; RBAC ENFORCED
-      </span>
-      <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-        Access Restricted for Role: {userRole || 'Guest'}
-      </h2>
-      <p className="text-sm text-slate-600 max-w-md mt-2 leading-relaxed">
-        Your assigned role lacks authorization to access this DBMS module.
-        Required permissions: <strong className="text-slate-800">{allowedRoles.join(' or ')}</strong>.
+    <div className="border border-rule bg-surface p-8 max-w-xl mx-auto my-12 rounded-[2px] text-center space-y-3">
+      <p className="font-mono text-xs uppercase tracking-wider text-blood">
+        HTTP 403 &bull; Authorization Gate Enforced
       </p>
-      <div className="flex items-center gap-3 mt-6">
+      <h2 className="font-serif text-2xl font-semibold text-ink">
+        Restricted Ledger Module
+      </h2>
+      <p className="text-xs text-muted max-w-md mx-auto leading-relaxed">
+        Your active role (<strong className="text-ink font-mono">{userRole || 'Guest'}</strong>) is not granted access to this operational view.
+        Authorized roles for this ledger: <span className="font-mono text-ink">{allowedRoles.join(', ')}</span>.
+      </p>
+      <div className="pt-4 border-t border-rule">
         <Link
           to="/"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-colors shadow-sm"
+          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-blood text-paper text-xs font-medium rounded-[2px] hover:bg-blood-hover transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Return to Dashboard</span>
+          Return to Primary Dashboard
         </Link>
       </div>
     </div>
@@ -69,8 +65,9 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="w-8 h-8 border-4 border-brand-600 border-t-transparent rounded-full animate-spin"></div>
+      <div className="flex items-center justify-center min-h-[60vh] text-xs font-mono text-muted">
+        <span className="w-2 h-2 rounded-full bg-blood animate-pulse mr-2" />
+        <span>Verifying clinical authorization...</span>
       </div>
     );
   }
@@ -92,131 +89,132 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 
 function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <Routes>
-          {/* Standalone Login Route */}
-          <Route path="/login" element={<Login />} />
+    <ErrorBoundary>
+      <AuthProvider>
+        <Router>
+          <Routes>
+            {/* Standalone Login Route */}
+            <Route path="/login" element={<Login />} />
 
-          {/* Core Modules wrapped in MainLayout & ProtectedRoute */}
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR', 'PATIENT']}>
-                <MainLayout>
-                  <Dashboard />
-                </MainLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/hospitals"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
-                <MainLayout>
-                  <HospitalManagement />
-                </MainLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/donors"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR']}>
-                <MainLayout>
-                  <DonorManagement />
-                </MainLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/patients"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'PATIENT']}>
-                <MainLayout>
-                  <PatientManagement />
-                </MainLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/blood-bank"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
-                <MainLayout>
-                  <BloodBank />
-                </MainLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/blood-requests"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'PATIENT']}>
-                <MainLayout>
-                  <BloodRequests />
-                </MainLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/organ-donation"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR', 'PATIENT']}>
-                <MainLayout>
-                  <OrganDonation />
-                </MainLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/donation-camps"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR']}>
-                <MainLayout>
-                  <DonationCamps />
-                </MainLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/sql-lab"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
-                <MainLayout>
-                  <SQLLaboratory />
-                </MainLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/dbms-lab"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR', 'PATIENT']}>
-                <MainLayout>
-                  <DBMSLearningLab />
-                </MainLayout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/eer-diagram"
-            element={
-              <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR', 'PATIENT']}>
-                <MainLayout>
-                  <EERDiagramPage />
-                </MainLayout>
-              </ProtectedRoute>
-            }
-          />
+            {/* Core Modules wrapped in MainLayout & ProtectedRoute */}
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR', 'PATIENT']}>
+                  <MainLayout>
+                    <Dashboard />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/hospitals"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                  <MainLayout>
+                    <HospitalManagement />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/donors"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR']}>
+                  <MainLayout>
+                    <DonorManagement />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/patients"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'PATIENT']}>
+                  <MainLayout>
+                    <PatientManagement />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/blood-bank"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                  <MainLayout>
+                    <BloodBank />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/blood-requests"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'PATIENT']}>
+                  <MainLayout>
+                    <BloodRequests />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/organ-donation"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR', 'PATIENT']}>
+                  <MainLayout>
+                    <OrganDonation />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/donation-camps"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR']}>
+                  <MainLayout>
+                    <DonationCamps />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/sql-lab"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'STAFF']}>
+                  <MainLayout>
+                    <SQLLaboratory />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dbms-lab"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR', 'PATIENT']}>
+                  <MainLayout>
+                    <DBMSLearningLab />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/eer-diagram"
+              element={
+                <ProtectedRoute allowedRoles={['ADMIN', 'STAFF', 'DONOR', 'PATIENT']}>
+                  <MainLayout>
+                    <EERDiagramPage />
+                  </MainLayout>
+                </ProtectedRoute>
+              }
+            />
 
-          {/* Catch-all redirect */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </Router>
-    </AuthProvider>
+            {/* Catch-all redirect */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Router>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
 
 export default App;
-

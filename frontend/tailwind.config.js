@@ -7,34 +7,40 @@ export default {
   theme: {
     extend: {
       colors: {
+        paper: '#F5F2EB',
+        surface: '#FBFAF6',
+        ink: '#1C1B18',
+        muted: '#6B675E',
+        rule: '#D9D4C7',
+        blood: {
+          DEFAULT: '#A4161A',
+          hover: '#851215',
+          soft: '#F0DAD6',
+        },
+        moss: '#3F6B4F',
+        ochre: '#B7791F',
+        slate: '#3C4A57',
+        // Backward-compat aliases if needed during migration
         brand: {
           50: '#fef2f2',
-          100: '#fee2e2',
-          200: '#fecaca',
-          300: '#fca5a5',
-          400: '#f87171',
-          500: '#ef4444',
-          600: '#dc2626',
-          700: '#b91c1c',
-          800: '#991b1b',
-          900: '#7f1d1d',
+          100: '#F0DAD6',
+          500: '#A4161A',
+          600: '#A4161A',
+          700: '#851215',
         },
-        navy: {
-          50: '#f8fafc',
-          100: '#f1f5f9',
-          200: '#e2e8f0',
-          300: '#cbd5e1',
-          400: '#94a3b8',
-          500: '#64748b',
-          600: '#475569',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
-          950: '#020617',
-        }
-      }
+      },
+      fontFamily: {
+        serif: ['Newsreader', 'Fraunces', 'Georgia', 'serif'],
+        sans: ['"IBM Plex Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+      },
+      borderRadius: {
+        DEFAULT: '2px',
+        sm: '2px',
+        md: '3px',
+        lg: '4px',
+      },
     },
   },
   plugins: [],
 }
-

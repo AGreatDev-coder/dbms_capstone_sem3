@@ -1,19 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import Modal from '../components/Modal';
-import { BloodGroupPill, StatusBadge } from '../components/Badge';
-import {
-  HeartPulse,
-  Plus,
-  Sparkles,
-  ShieldCheck,
-  CheckCircle2,
-  Clock,
-  Layers,
-  FileCheck,
-  AlertCircle,
-  Activity,
-} from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
+import PageState from '../components/common/PageState';
+import Tabs from '../components/common/Tabs';
+import Button from '../components/common/Button';
+import Modal from '../components/common/Modal';
+import { Input, Select, Textarea } from '../components/common/FormControls';
+import StatusDot from '../components/common/StatusDot';
+import BloodGroupStamp from '../components/common/BloodGroupStamp';
+import { Sparkles, Plus, FileCheck, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const OrganDonation = () => {
@@ -26,6 +21,7 @@ const OrganDonation = () => {
   const [patients, setPatients] = useState([]);
   const [hospitals, setHospitals] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Modals
   const [isPledgeModalOpen, setIsPledgeModalOpen] = useState(false);
@@ -74,14 +70,14 @@ const OrganDonation = () => {
         api.get('/hospitals'),
       ]);
       if (dRes.data?.success) {
-        setDonors(dRes.data.donors);
-        if (dRes.data.donors.length > 0) {
+        setDonors(dRes.data.donors || []);
+        if (dRes.data.donors?.length > 0) {
           setPledgeForm((prev) => ({ ...prev, donor_id: dRes.data.donors[0].donor_id }));
         }
       }
       if (pRes.data?.success) {
-        setPatients(pRes.data.patients);
-        if (pRes.data.patients.length > 0) {
+        setPatients(pRes.data.patients || []);
+        if (pRes.data.patients?.length > 0) {
           setRequestForm((prev) => ({
             ...prev,
             patient_id: pRes.data.patients[0].patient_id,
@@ -89,7 +85,7 @@ const OrganDonation = () => {
           }));
         }
       }
-      if (hRes.data?.success) setHospitals(hRes.data.hospitals);
+      if (hRes.data?.success) setHospitals(hRes.data.hospitals || []);
     } catch (err) {
       console.error('Initial data fetch error:', err);
     }
@@ -98,10 +94,11 @@ const OrganDonation = () => {
   const fetchMatches = async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await api.get('/organ/matches');
-      if (res.data?.success) setMatches(res.data.matches);
+      if (res.data?.success) setMatches(res.data.matches || []);
     } catch (err) {
-      console.error('Matches fetch error:', err);
+      setError(err.response?.data?.message || 'Failed to load organ candidate matches.');
     } finally {
       setLoading(false);
     }
@@ -110,10 +107,11 @@ const OrganDonation = () => {
   const fetchDonations = async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await api.get('/organ/donations');
-      if (res.data?.success) setDonations(res.data.donations);
+      if (res.data?.success) setDonations(res.data.donations || []);
     } catch (err) {
-      console.error('Donations fetch error:', err);
+      setError(err.response?.data?.message || 'Failed to load pledged organ registry.');
     } finally {
       setLoading(false);
     }
@@ -122,10 +120,11 @@ const OrganDonation = () => {
   const fetchRequests = async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await api.get('/organ/requests');
-      if (res.data?.success) setRequests(res.data.requests);
+      if (res.data?.success) setRequests(res.data.requests || []);
     } catch (err) {
-      console.error('Requests fetch error:', err);
+      setError(err.response?.data?.message || 'Failed to load organ recipient waitlist.');
     } finally {
       setLoading(false);
     }
@@ -172,7 +171,6 @@ const OrganDonation = () => {
       const res = await api.post('/organ/donations', pledgeForm);
       if (res.data?.success) {
         setIsPledgeModalOpen(false);
-        alert(res.data.message);
         fetchDonations();
       }
     } catch (err) {
@@ -186,7 +184,6 @@ const OrganDonation = () => {
       const res = await api.post('/organ/requests', requestForm);
       if (res.data?.success) {
         setIsRequestModalOpen(false);
-        alert(res.data.message);
         fetchRequests();
       }
     } catch (err) {
@@ -194,155 +191,134 @@ const OrganDonation = () => {
     }
   };
 
+  const tabs = [
+    { id: 'matches', label: 'Candidate Matches & Verification', count: matches.length },
+    { id: 'donations', label: 'Pledged Organs Ledger', count: donations.length },
+    { id: 'requests', label: 'Recipient Waiting List', count: requests.length },
+  ];
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Organ Donation & Candidate Matching Network</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Illustrative matching engine subject to medical board review, tracking pledges, waiting lists, and HLA compatibility.
-          </p>
-        </div>
+      <PageHeader
+        breadcrumbs={['06 TRANSPLANT', 'ORGAN NETWORK']}
+        title="Organ Donor Network"
+        description="Candidate matching engine, solid organ pledges, recipient waiting lists, and HLA compatibility scoring."
+        action={
+          <div className="flex items-center gap-2">
+            {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={Sparkles}
+                onClick={handleGenerateMatches}
+              >
+                Evaluate Candidate Pairs
+              </Button>
+            )}
 
-        <div className="flex items-center gap-2">
-          {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
-            <button
-              onClick={handleGenerateMatches}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Evaluate Candidate Pairs</span>
-            </button>
-          )}
+            {(user?.role === 'ADMIN' || user?.role === 'STAFF' || user?.role === 'DONOR') && (
+              <Button
+                variant="primary"
+                size="sm"
+                icon={Plus}
+                onClick={() => setIsPledgeModalOpen(true)}
+              >
+                Pledge Organ
+              </Button>
+            )}
+          </div>
+        }
+      />
 
-          {(user?.role === 'ADMIN' || user?.role === 'STAFF' || user?.role === 'DONOR') && (
-            <button
-              onClick={() => setIsPledgeModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Pledge Organ</span>
-            </button>
-          )}
+      {/* Academic Demonstration Disclaimer */}
+      <div className="p-3 border border-rule bg-surface text-xs space-y-1">
+        <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-ink font-semibold">
+          <span>Academic Demonstration Disclaimer</span>
         </div>
-      </div>
-
-      {/* Mandatory Clinical Disclaimer Banner */}
-      <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 text-xs text-purple-950 flex items-start gap-3">
-        <Activity className="w-5 h-5 text-purple-600 shrink-0 mt-0.5" />
-        <div>
-          <p className="font-bold">Academic Demonstration System Disclaimer (Section 1 & 7)</p>
-          <p className="text-purple-800 mt-0.5 leading-relaxed">
-            This module illustrates relational candidate pairing and compatibility scoring for academic evaluation only.
-            Matches are strictly designated as <strong>PENDING_VERIFICATION</strong> upon generation and <strong>never automatically approved</strong>.
-            All transplant allocations require human review and authorization by certified medical boards.
-          </p>
-        </div>
+        <p className="text-muted leading-relaxed">
+          This system models relational candidate pairing and compatibility scoring for academic evaluation only. 
+          Generated matches are designated as <strong className="font-mono text-ink">PENDING_VERIFICATION</strong> and 
+          never automatically allocated. All clinical transplants require external review and authorization by certified boards.
+        </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 text-xs">
-        <button
-          onClick={() => setActiveTab('matches')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'matches'
-              ? 'border-purple-600 text-purple-700 bg-purple-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <ShieldCheck className="w-4 h-4 text-purple-600" />
-          <span>Candidate Matches & Verification ({matches.length})</span>
-        </button>
+      <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
-        <button
-          onClick={() => setActiveTab('donations')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'donations'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <HeartPulse className="w-4 h-4" />
-          <span>Pledged Organs ({donations.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('requests')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'requests'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Clock className="w-4 h-4" />
-          <span>Recipient Waiting List ({requests.length})</span>
-        </button>
-      </div>
-
-      {/* TAB 1: CANDIDATE MATCHES & VERIFICATION */}
+      {/* Tab 1: Candidate Matches */}
       {activeTab === 'matches' && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        <PageState
+          loading={loading}
+          error={error}
+          onRetry={fetchMatches}
+          empty={matches.length === 0}
+          emptyMessage="No candidate matches recorded. Click 'Evaluate Candidate Pairs' to run cross-matching."
+        >
+          <div className="border border-rule bg-surface overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-purple-50/50 border-b border-purple-200 text-purple-900 uppercase tracking-wider font-semibold">
-                  <th className="py-3 px-4">Match ID</th>
-                  <th className="py-3 px-4">Organ Type</th>
-                  <th className="py-3 px-4">Pledging Donor</th>
-                  <th className="py-3 px-4">Waiting Recipient</th>
-                  <th className="py-3 px-4">Center</th>
-                  <th className="py-3 px-4">Compatibility Score</th>
-                  <th className="py-3 px-4">Compatibility Status</th>
-                  <th className="py-3 px-4">Verification Status</th>
-                  <th className="py-3 px-4 text-right">Medical Review</th>
+                <tr className="border-b border-rule bg-paper/60 text-[10px] font-mono uppercase tracking-wider text-muted">
+                  <th className="py-2.5 px-3 font-semibold">Match ID</th>
+                  <th className="py-2.5 px-3 font-semibold">Organ</th>
+                  <th className="py-2.5 px-3 font-semibold">Pledging Donor</th>
+                  <th className="py-2.5 px-3 font-semibold">Waiting Recipient</th>
+                  <th className="py-2.5 px-3 font-semibold">Center</th>
+                  <th className="py-2.5 px-3 font-semibold text-right">Score</th>
+                  <th className="py-2.5 px-3 font-semibold">Compatibility</th>
+                  <th className="py-2.5 px-3 font-semibold">Verification</th>
+                  <th className="py-2.5 px-3 font-semibold text-right">Board Review</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-rule font-sans">
                 {matches.map((m) => (
-                  <tr key={m.match_id} className="hover:bg-purple-50/20">
-                    <td className="py-3 px-4 font-mono font-bold text-slate-900">#{m.match_id}</td>
-                    <td className="py-3 px-4 font-bold text-slate-800">
-                      <span className="px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                  <tr key={m.match_id} className="hover:bg-paper/40 transition-colors h-11">
+                    <td className="py-2 px-3 font-mono font-semibold text-ink">
+                      #{m.match_id}
+                    </td>
+                    <td className="py-2 px-3">
+                      <span className="font-mono text-[11px] font-semibold text-ink">
                         {m.organ_type}
                       </span>
                     </td>
-                    <td className="py-3 px-4 font-medium text-slate-800">
-                      <div>{m.donor_name}</div>
-                      <div className="text-[11px] text-slate-500 font-mono">
-                        Blood: {m.donor_blood_group} | HLA: {m.donor_hla}
+                    <td className="py-2 px-3">
+                      <div className="font-medium text-ink">{m.donor_name}</div>
+                      <div className="text-[10px] font-mono text-muted">
+                        {m.donor_blood_group} &bull; {m.donor_hla}
                       </div>
                     </td>
-                    <td className="py-3 px-4 font-medium text-slate-800">
-                      <div>{m.patient_name}</div>
-                      <div className="text-[11px] text-slate-500 font-mono">
-                        Blood: {m.patient_blood_group} | HLA: {m.patient_hla}
+                    <td className="py-2 px-3">
+                      <div className="font-medium text-ink">{m.patient_name}</div>
+                      <div className="text-[10px] font-mono text-muted">
+                        {m.patient_blood_group} &bull; {m.patient_hla}
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-slate-600">{m.hospital_name}</td>
-                    <td className="py-3 px-4 font-mono font-bold text-slate-900 text-sm">
+                    <td className="py-2 px-3 text-muted text-[11px]">
+                      {m.hospital_name}
+                    </td>
+                    <td className="py-2 px-3 font-mono font-bold text-ink text-right text-xs">
                       {m.match_score}%
                     </td>
-                    <td className="py-3 px-4">
-                      <StatusBadge status={m.compatibility_status} />
+                    <td className="py-2 px-3">
+                      <StatusDot status={m.compatibility_status} />
                     </td>
-                    <td className="py-3 px-4">
-                      <StatusBadge status={m.verification_status} />
+                    <td className="py-2 px-3">
+                      <StatusDot status={m.verification_status} />
                       {m.verified_by_name && (
-                        <span className="block text-[10px] text-emerald-700 font-medium mt-0.5">
-                          Verified by {m.verified_by_name}
+                        <span className="block text-[10px] text-moss font-mono mt-0.5">
+                          via {m.verified_by_name}
                         </span>
                       )}
                     </td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-2 px-3 text-right">
                       {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
-                        <button
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          icon={FileCheck}
                           onClick={() => handleOpenVerify(m)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold rounded bg-slate-800 hover:bg-slate-900 text-white transition-colors"
                         >
-                          <FileCheck className="w-3.5 h-3.5" />
-                          <span>Review & Verify</span>
-                        </button>
+                          Review
+                        </Button>
                       )}
                     </td>
                   </tr>
@@ -350,110 +326,145 @@ const OrganDonation = () => {
               </tbody>
             </table>
           </div>
-        </div>
+        </PageState>
       )}
 
-      {/* TAB 2: PLEDGED ORGANS TABLE */}
+      {/* Tab 2: Pledged Organs */}
       {activeTab === 'donations' && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
+        <PageState
+          loading={loading}
+          error={error}
+          onRetry={fetchDonations}
+          empty={donations.length === 0}
+          emptyMessage="No organ pledges registered."
+        >
+          <div className="border border-rule bg-surface overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold">
-                  <th className="py-3 px-4">Pledge ID</th>
-                  <th className="py-3 px-4">Organ Type</th>
-                  <th className="py-3 px-4">Donor Name</th>
-                  <th className="py-3 px-4">Blood Group</th>
-                  <th className="py-3 px-4">Registration Date</th>
-                  <th className="py-3 px-4">HLA Typing</th>
-                  <th className="py-3 px-4">Medical Clearance</th>
-                  <th className="py-3 px-4">Status</th>
+                <tr className="border-b border-rule bg-paper/60 text-[10px] font-mono uppercase tracking-wider text-muted">
+                  <th className="py-2.5 px-3 font-semibold">Pledge ID</th>
+                  <th className="py-2.5 px-3 font-semibold">Organ</th>
+                  <th className="py-2.5 px-3 font-semibold">Donor Name</th>
+                  <th className="py-2.5 px-3 font-semibold">Blood Group</th>
+                  <th className="py-2.5 px-3 font-semibold">Registered</th>
+                  <th className="py-2.5 px-3 font-semibold">HLA Typing</th>
+                  <th className="py-2.5 px-3 font-semibold">Clearance</th>
+                  <th className="py-2.5 px-3 font-semibold">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-rule font-sans">
                 {donations.map((d) => (
-                  <tr key={d.organ_donation_id} className="hover:bg-slate-50/50">
-                    <td className="py-3 px-4 font-mono font-bold text-slate-900">#{d.organ_donation_id}</td>
-                    <td className="py-3 px-4 font-bold text-slate-800">{d.organ_type}</td>
-                    <td className="py-3 px-4 font-medium text-slate-800">{d.donor_name}</td>
-                    <td className="py-3 px-4">
-                      <BloodGroupPill bloodGroup={d.blood_group} />
+                  <tr key={d.organ_donation_id} className="hover:bg-paper/40 transition-colors h-10">
+                    <td className="py-2 px-3 font-mono font-semibold text-ink">
+                      #{d.organ_donation_id}
                     </td>
-                    <td className="py-3 px-4 text-slate-500">{d.registration_date}</td>
-                    <td className="py-3 px-4 font-mono text-slate-600">{d.hla_type}</td>
-                    <td className="py-3 px-4">
+                    <td className="py-2 px-3 font-mono font-semibold text-ink">
+                      {d.organ_type}
+                    </td>
+                    <td className="py-2 px-3 font-medium text-ink">
+                      {d.donor_name}
+                    </td>
+                    <td className="py-2 px-3">
+                      <BloodGroupStamp bloodGroup={d.blood_group} size="sm" />
+                    </td>
+                    <td className="py-2 px-3 font-mono text-[11px] text-muted">
+                      {d.registration_date}
+                    </td>
+                    <td className="py-2 px-3 font-mono text-[11px] text-muted">
+                      {d.hla_type}
+                    </td>
+                    <td className="py-2 px-3 font-mono text-[11px]">
                       {d.medical_clearance ? (
-                        <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                        <span className="text-moss font-semibold flex items-center gap-1">
                           <CheckCircle2 className="w-3.5 h-3.5" /> Cleared
                         </span>
                       ) : (
-                        <span className="text-slate-400">Pending</span>
+                        <span className="text-muted">Pending</span>
                       )}
                     </td>
-                    <td className="py-3 px-4">
-                      <StatusBadge status={d.donation_status} />
+                    <td className="py-2 px-3">
+                      <StatusDot status={d.donation_status} />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
+        </PageState>
       )}
 
-      {/* TAB 3: RECIPIENT WAITING LIST */}
+      {/* Tab 3: Recipient Waiting List */}
       {activeTab === 'requests' && (
         <div className="space-y-4">
           <div className="flex justify-end">
-            <button
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Plus}
               onClick={() => setIsRequestModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Recipient to Waiting List</span>
-            </button>
+              Add Recipient to Waitlist
+            </Button>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
+          <PageState
+            loading={loading}
+            error={error}
+            onRetry={fetchRequests}
+            empty={requests.length === 0}
+            emptyMessage="No recipients currently queued on the organ waiting list."
+          >
+            <div className="border border-rule bg-surface overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold">
-                    <th className="py-3 px-4">Request ID</th>
-                    <th className="py-3 px-4">Patient Name</th>
-                    <th className="py-3 px-4">Requested Organ</th>
-                    <th className="py-3 px-4">Blood Group</th>
-                    <th className="py-3 px-4">Hospital Center</th>
-                    <th className="py-3 px-4">Urgency Score (1-100)</th>
-                    <th className="py-3 px-4">Urgency Level</th>
-                    <th className="py-3 px-4">Request Date</th>
-                    <th className="py-3 px-4">Status</th>
+                  <tr className="border-b border-rule bg-paper/60 text-[10px] font-mono uppercase tracking-wider text-muted">
+                    <th className="py-2.5 px-3 font-semibold">Request ID</th>
+                    <th className="py-2.5 px-3 font-semibold">Patient Name</th>
+                    <th className="py-2.5 px-3 font-semibold">Organ</th>
+                    <th className="py-2.5 px-3 font-semibold">Blood Group</th>
+                    <th className="py-2.5 px-3 font-semibold">Center</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">Score (1-100)</th>
+                    <th className="py-2.5 px-3 font-semibold">Urgency</th>
+                    <th className="py-2.5 px-3 font-semibold">Date</th>
+                    <th className="py-2.5 px-3 font-semibold">Status</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-rule font-sans">
                   {requests.map((r) => (
-                    <tr key={r.organ_request_id} className="hover:bg-slate-50/50">
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">#{r.organ_request_id}</td>
-                      <td className="py-3 px-4 font-semibold text-slate-800">{r.patient_name}</td>
-                      <td className="py-3 px-4 font-bold text-slate-800">{r.organ_type}</td>
-                      <td className="py-3 px-4">
-                        <BloodGroupPill bloodGroup={r.recipient_blood_group} />
+                    <tr key={r.organ_request_id} className="hover:bg-paper/40 transition-colors h-10">
+                      <td className="py-2 px-3 font-mono font-semibold text-ink">
+                        #{r.organ_request_id}
                       </td>
-                      <td className="py-3 px-4 text-slate-600">{r.hospital_name}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">{r.medical_urgency_score} / 100</td>
-                      <td className="py-3 px-4">
-                        <StatusBadge status={r.urgency_level} />
+                      <td className="py-2 px-3 font-medium text-ink">
+                        {r.patient_name}
                       </td>
-                      <td className="py-3 px-4 text-slate-500">{r.request_date}</td>
-                      <td className="py-3 px-4">
-                        <StatusBadge status={r.request_status} />
+                      <td className="py-2 px-3 font-mono font-semibold text-ink">
+                        {r.organ_type}
+                      </td>
+                      <td className="py-2 px-3">
+                        <BloodGroupStamp bloodGroup={r.recipient_blood_group} size="sm" />
+                      </td>
+                      <td className="py-2 px-3 text-muted text-[11px]">
+                        {r.hospital_name}
+                      </td>
+                      <td className="py-2 px-3 font-mono font-bold text-ink text-right">
+                        {r.medical_urgency_score}
+                      </td>
+                      <td className="py-2 px-3">
+                        <StatusDot status={r.urgency_level} />
+                      </td>
+                      <td className="py-2 px-3 font-mono text-[11px] text-muted">
+                        {r.request_date}
+                      </td>
+                      <td className="py-2 px-3">
+                        <StatusDot status={r.request_status} />
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          </PageState>
         </div>
       )}
 
@@ -462,237 +473,210 @@ const OrganDonation = () => {
         isOpen={isVerifyModalOpen}
         onClose={() => setIsVerifyModalOpen(false)}
         title={`Medical Board Verification: Match #${selectedMatch?.match_id}`}
+        subtitle="Clinical ethics review for solid organ transplant matching"
       >
-        <form onSubmit={handleUpdateVerification} className="space-y-4 text-xs">
-          <div className="p-3 rounded-xl bg-purple-50/60 border border-purple-200 space-y-1">
-            <p className="font-bold text-slate-900">
-              {selectedMatch?.organ_type} Transplant Candidate Pair
-            </p>
-            <p className="text-slate-600">
-              Donor: <strong>{selectedMatch?.donor_name}</strong> ({selectedMatch?.donor_blood_group}) &rarr; Recipient: <strong>{selectedMatch?.patient_name}</strong> ({selectedMatch?.patient_blood_group})
-            </p>
-            <p className="text-slate-600">
-              Evaluated Compatibility Score: <strong>{selectedMatch?.match_score}%</strong>
-            </p>
+        <form onSubmit={handleUpdateVerification} className="space-y-4">
+          <div className="p-3 border border-rule bg-paper space-y-1 font-mono text-xs">
+            <div className="font-semibold text-ink">
+              {selectedMatch?.organ_type} Candidate Pair
+            </div>
+            <div className="text-muted text-[11px]">
+              Donor: {selectedMatch?.donor_name} ({selectedMatch?.donor_blood_group}) &rarr; Recipient: {selectedMatch?.patient_name} ({selectedMatch?.patient_blood_group})
+            </div>
+            <div className="text-muted text-[11px]">
+              Algorithmic Compatibility Score: <span className="font-bold text-ink">{selectedMatch?.match_score}%</span>
+            </div>
           </div>
 
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Verification Status *</label>
-            <select
-              value={verifyForm.verification_status}
-              onChange={(e) => setVerifyForm({ ...verifyForm, verification_status: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none font-bold"
-            >
-              <option value="PENDING_VERIFICATION">Pending Further Clinical Review</option>
-              <option value="VERIFIED_BY_COMMITTEE">Verified by Medical Ethics Committee</option>
-              <option value="TRANSPLANT_SCHEDULED">Transplant Scheduled</option>
-              <option value="REJECTED">Rejected by Committee (Clinical Mismatch)</option>
-            </select>
-          </div>
+          <Select
+            label="Verification Decision"
+            required
+            value={verifyForm.verification_status}
+            onChange={(e) => setVerifyForm({ ...verifyForm, verification_status: e.target.value })}
+            options={[
+              { value: 'PENDING_VERIFICATION', label: 'Pending Further Clinical Review' },
+              { value: 'VERIFIED_BY_COMMITTEE', label: 'Verified by Medical Ethics Committee' },
+              { value: 'TRANSPLANT_SCHEDULED', label: 'Transplant Scheduled' },
+              { value: 'REJECTED', label: 'Rejected by Committee (Clinical Mismatch)' },
+            ]}
+          />
 
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Board Review Notes & Clinical Decision</label>
-            <textarea
-              rows="3"
-              required
-              value={verifyForm.medical_notes}
-              onChange={(e) => setVerifyForm({ ...verifyForm, medical_notes: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-            />
-          </div>
+          <Textarea
+            label="Board Review Notes & Clinical Decision"
+            required
+            rows={3}
+            value={verifyForm.medical_notes}
+            onChange={(e) => setVerifyForm({ ...verifyForm, medical_notes: e.target.value })}
+          />
 
-          <div className="pt-4 border-t flex justify-end gap-2">
-            <button
+          <div className="pt-3 border-t border-rule flex justify-end gap-2">
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setIsVerifyModalOpen(false)}
-              className="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50"
             >
               Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 shadow-sm"
-            >
-              Commit Verification Decision
-            </button>
+            </Button>
+            <Button type="submit" variant="primary">
+              Commit Board Decision
+            </Button>
           </div>
         </form>
       </Modal>
 
       {/* Pledge Organ Modal */}
-      <Modal isOpen={isPledgeModalOpen} onClose={() => setIsPledgeModalOpen(false)} title="Pledge Organ Donation">
-        <form onSubmit={handleCreatePledge} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Select Donor *</label>
-            <select
-              required
-              value={pledgeForm.donor_id}
-              onChange={(e) => setPledgeForm({ ...pledgeForm, donor_id: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-            >
-              {donors.map((d) => (
-                <option key={d.donor_id} value={d.donor_id}>
-                  #{d.donor_id} - {d.name} ({d.blood_group}) - {d.donor_type}
-                </option>
-              ))}
-            </select>
-          </div>
+      <Modal
+        isOpen={isPledgeModalOpen}
+        onClose={() => setIsPledgeModalOpen(false)}
+        title="Pledge Organ Donation"
+        subtitle="Registers 1:N organ pledge against verified donor profile."
+      >
+        <form onSubmit={handleCreatePledge} className="space-y-4">
+          <Select
+            label="Select Donor"
+            required
+            value={pledgeForm.donor_id}
+            onChange={(e) => setPledgeForm({ ...pledgeForm, donor_id: e.target.value })}
+            options={donors.map((d) => ({
+              value: d.donor_id,
+              label: `#${d.donor_id} - ${d.name} (${d.blood_group}) - ${d.donor_type}`,
+            }))}
+          />
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Pledged Organ Type *</label>
-              <select
-                value={pledgeForm.organ_type}
-                onChange={(e) => setPledgeForm({ ...pledgeForm, organ_type: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none font-bold"
-              >
-                <option value="KIDNEY">Kidney</option>
-                <option value="LIVER">Liver</option>
-                <option value="HEART">Heart</option>
-                <option value="LUNG">Lung</option>
-                <option value="PANCREAS">Pancreas</option>
-                <option value="CORNEA">Cornea</option>
-              </select>
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">HLA Typing</label>
-              <input
-                type="text"
-                value={pledgeForm.hla_type}
-                onChange={(e) => setPledgeForm({ ...pledgeForm, hla_type: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                placeholder="e.g. HLA-A2, B7, DR4"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Clinical Clearance Notes</label>
-            <textarea
-              rows="2"
-              value={pledgeForm.clinical_notes}
-              onChange={(e) => setPledgeForm({ ...pledgeForm, clinical_notes: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
+            <Select
+              label="Pledged Organ Type"
+              required
+              value={pledgeForm.organ_type}
+              onChange={(e) => setPledgeForm({ ...pledgeForm, organ_type: e.target.value })}
+              options={[
+                { value: 'KIDNEY', label: 'Kidney' },
+                { value: 'LIVER', label: 'Liver' },
+                { value: 'HEART', label: 'Heart' },
+                { value: 'LUNG', label: 'Lung' },
+                { value: 'PANCREAS', label: 'Pancreas' },
+                { value: 'CORNEA', label: 'Cornea' },
+              ]}
+            />
+            <Input
+              label="HLA Typing"
+              value={pledgeForm.hla_type}
+              onChange={(e) => setPledgeForm({ ...pledgeForm, hla_type: e.target.value })}
+              placeholder="e.g. HLA-A2, B7, DR4"
             />
           </div>
 
-          <div className="pt-4 border-t flex justify-end gap-2">
-            <button
+          <Textarea
+            label="Clinical Clearance Notes"
+            rows={2}
+            value={pledgeForm.clinical_notes}
+            onChange={(e) => setPledgeForm({ ...pledgeForm, clinical_notes: e.target.value })}
+          />
+
+          <div className="pt-3 border-t border-rule flex justify-end gap-2">
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setIsPledgeModalOpen(false)}
-              className="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50"
             >
               Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-brand-600 text-white font-bold rounded-lg hover:bg-brand-700 shadow-sm"
-            >
+            </Button>
+            <Button type="submit" variant="primary">
               Register Pledge
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>
 
       {/* Recipient Request Modal */}
-      <Modal isOpen={isRequestModalOpen} onClose={() => setIsRequestModalOpen(false)} title="Register Organ Recipient Request">
-        <form onSubmit={handleCreateRequest} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Recipient Patient *</label>
-            <select
+      <Modal
+        isOpen={isRequestModalOpen}
+        onClose={() => setIsRequestModalOpen(false)}
+        title="Register Organ Recipient Request"
+        subtitle="Appends candidate to waiting list with urgency priority."
+      >
+        <form onSubmit={handleCreateRequest} className="space-y-4">
+          <Select
+            label="Recipient Patient"
+            required
+            value={requestForm.patient_id}
+            onChange={(e) => {
+              const ptId = parseInt(e.target.value, 10);
+              const pt = patients.find((p) => p.patient_id === ptId);
+              setRequestForm({
+                ...requestForm,
+                patient_id: ptId,
+                recipient_blood_group: pt ? pt.blood_group : requestForm.recipient_blood_group,
+              });
+            }}
+            options={patients.map((p) => ({
+              value: p.patient_id,
+              label: `#${p.patient_id} - ${p.name} (${p.blood_group})`,
+            }))}
+          />
+
+          <div className="grid grid-cols-2 gap-3">
+            <Select
+              label="Requested Organ"
               required
-              value={requestForm.patient_id}
-              onChange={(e) => {
-                const ptId = parseInt(e.target.value, 10);
-                const pt = patients.find((p) => p.patient_id === ptId);
-                setRequestForm({
-                  ...requestForm,
-                  patient_id: ptId,
-                  recipient_blood_group: pt ? pt.blood_group : requestForm.recipient_blood_group,
-                });
-              }}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-            >
-              {patients.map((p) => (
-                <option key={p.patient_id} value={p.patient_id}>
-                  #{p.patient_id} - {p.name} ({p.blood_group})
-                </option>
-              ))}
-            </select>
+              value={requestForm.organ_type}
+              onChange={(e) => setRequestForm({ ...requestForm, organ_type: e.target.value })}
+              options={[
+                { value: 'KIDNEY', label: 'Kidney' },
+                { value: 'LIVER', label: 'Liver' },
+                { value: 'HEART', label: 'Heart' },
+                { value: 'LUNG', label: 'Lung' },
+                { value: 'PANCREAS', label: 'Pancreas' },
+                { value: 'CORNEA', label: 'Cornea' },
+              ]}
+            />
+            <Select
+              label="Hospital Center"
+              required
+              value={requestForm.hospital_id}
+              onChange={(e) => setRequestForm({ ...requestForm, hospital_id: parseInt(e.target.value, 10) })}
+              options={hospitals.map((h) => ({
+                value: h.hospital_id,
+                label: h.hospital_name,
+              }))}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Requested Organ *</label>
-              <select
-                value={requestForm.organ_type}
-                onChange={(e) => setRequestForm({ ...requestForm, organ_type: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none font-bold"
-              >
-                <option value="KIDNEY">Kidney</option>
-                <option value="LIVER">Liver</option>
-                <option value="HEART">Heart</option>
-                <option value="LUNG">Lung</option>
-                <option value="PANCREAS">Pancreas</option>
-                <option value="CORNEA">Cornea</option>
-              </select>
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Hospital Center *</label>
-              <select
-                value={requestForm.hospital_id}
-                onChange={(e) => setRequestForm({ ...requestForm, hospital_id: parseInt(e.target.value, 10) })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                {hospitals.map((h) => (
-                  <option key={h.hospital_id} value={h.hospital_id}>{h.hospital_name}</option>
-                ))}
-              </select>
-            </div>
+            <Input
+              label="Medical Urgency Score (1-100)"
+              type="number"
+              min="1"
+              max="100"
+              required
+              value={requestForm.medical_urgency_score}
+              onChange={(e) => setRequestForm({ ...requestForm, medical_urgency_score: parseInt(e.target.value, 10) })}
+            />
+            <Select
+              label="Urgency Level"
+              required
+              value={requestForm.urgency_level}
+              onChange={(e) => setRequestForm({ ...requestForm, urgency_level: e.target.value })}
+              options={[
+                { value: 'CRITICAL', label: 'Critical' },
+                { value: 'HIGH', label: 'High' },
+                { value: 'MEDIUM', label: 'Medium' },
+                { value: 'ROUTINE', label: 'Routine' },
+              ]}
+            />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Medical Urgency Score (1-100) *</label>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                required
-                value={requestForm.medical_urgency_score}
-                onChange={(e) => setRequestForm({ ...requestForm, medical_urgency_score: parseInt(e.target.value, 10) })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Urgency Level *</label>
-              <select
-                value={requestForm.urgency_level}
-                onChange={(e) => setRequestForm({ ...requestForm, urgency_level: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                <option value="CRITICAL">Critical</option>
-                <option value="HIGH">High</option>
-                <option value="MEDIUM">Medium</option>
-                <option value="ROUTINE">Routine</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="pt-4 border-t flex justify-end gap-2">
-            <button
+          <div className="pt-3 border-t border-rule flex justify-end gap-2">
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setIsRequestModalOpen(false)}
-              className="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50"
             >
               Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-brand-600 text-white font-bold rounded-lg hover:bg-brand-700 shadow-sm"
-            >
+            </Button>
+            <Button type="submit" variant="primary">
               Add to Waitlist
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>
@@ -701,4 +685,3 @@ const OrganDonation = () => {
 };
 
 export default OrganDonation;
-

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Activity, Shield, UserCheck, Key, ArrowRight, Database, CheckCircle2 } from 'lucide-react';
+import { Input } from '../components/common/FormControls';
+import { Button } from '../components/common/Button';
 
 const Login = () => {
-  const { login, quickLogin, isMySQLConnected } = useAuth();
+  const { login, quickLogin } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('Password@123');
@@ -15,38 +16,30 @@ const Login = () => {
     {
       username: 'admin',
       role: 'ADMIN',
-      title: 'Chief Medical Officer',
       name: 'Dr. Vikram Sharma',
       facility: 'AIIMS New Delhi',
-      desc: 'Full administrator access to all hospitals, staff, wards, analytics, and SQL laboratory.',
-      badgeColor: 'bg-rose-100 text-rose-800 border-rose-200',
+      scope: 'Full schema privileges, hospital registry, advanced SQL lab',
     },
     {
       username: 'staff_priya',
       role: 'STAFF',
-      title: 'Head of Transfusion Services',
       name: 'Dr. Priya Sundaram',
       facility: 'Apollo Multispeciality',
-      desc: 'Authorized to process blood requests, verify candidate organ matches, and allocate units.',
-      badgeColor: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+      scope: 'Transfusion triage, blood unit allocation, organ verification',
     },
     {
       username: 'donor_rahul',
       role: 'DONOR',
-      title: 'Voluntary Universal Donor',
       name: 'Rahul Deshmukh (O-)',
       facility: 'Community Registry',
-      desc: 'Can view donation history, register for upcoming donation camps, and manage availability.',
-      badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+      scope: 'Donation history ledger, camp registrations, organ pledge',
     },
     {
-      username: 'patient_aditya',
+      username: 'patient_krishna',
       role: 'PATIENT',
-      title: 'Admitted Inpatient',
-      name: 'Aditya Mehta (O+)',
+      name: 'Krishna Kapoor (AB-)',
       facility: 'Cardiovascular Care',
-      desc: 'Can monitor pending blood requests, allocation status, and organ waiting list standing.',
-      badgeColor: 'bg-purple-100 text-purple-800 border-purple-200',
+      scope: 'Inpatient #20001 status, transfusion requisition tracking',
     },
   ];
 
@@ -78,112 +71,140 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-[85vh] flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl space-y-6">
-        {/* Title */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-brand-600 to-rose-500 text-white shadow-xl shadow-brand-500/25 mb-1">
-            <Activity className="w-8 h-8" />
-          </div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
-            LIFE<span className="text-brand-600">-LINK</span> Network Access
-          </h1>
-          <p className="text-xs text-slate-500 max-w-lg mx-auto">
-            Blood Bank & Organ Donor Network Management System | MySQL 8.0 DBMS Academic Capstone Project
+    <div className="min-h-screen bg-paper flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-4xl w-full mx-auto grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+        {/* Left Editorial Statement */}
+        <div className="md:col-span-5 space-y-4 pt-2">
+          <p className="font-mono text-[11px] uppercase tracking-wider text-muted">
+            Healthcare DBMS Capstone
           </p>
-        </div>
+          <h1 className="font-serif text-3xl sm:text-4xl text-ink font-semibold leading-tight tracking-tight">
+            LIFE<span className="text-blood">–LINK</span>
+          </h1>
+          <p className="text-xs text-muted leading-relaxed">
+            Centralized blood bank and organ donor network management system.
+            A 3NF normalized relational schema enforcing multi-attribute specialization,
+            ACID row-locking transactions, and perishable inventory rules on MySQL 8.0.
+          </p>
 
-        {/* 1-Click Persona Selector Grid (For Examiners & Reviewers) */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <Shield className="w-4 h-4 text-brand-600" />
-                <span>One-Click Academic Evaluation Personas</span>
-              </h2>
-              <p className="text-xs text-slate-500">
-                Select any test role below to immediately experience Role-Based Access Control (RBAC):
-              </p>
+          <div className="pt-4 border-t border-rule space-y-2 text-[11px] text-muted font-mono">
+            <div className="flex justify-between py-1 border-b border-rule/50">
+              <span>Database Engine</span>
+              <span className="text-ink">MySQL 8.0.x (InnoDB)</span>
             </div>
-            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200">
-              Demo Credentials Preloaded
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {personas.map((p) => (
-              <button
-                key={p.username}
-                onClick={() => handleSelectPersona(p.username)}
-                disabled={loading}
-                className="text-left p-4 rounded-xl border border-slate-200 hover:border-brand-500 hover:shadow-md transition-all group bg-slate-50/50 hover:bg-white"
-              >
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border uppercase ${p.badgeColor}`}>
-                    {p.role} ROLE
-                  </span>
-                  <span className="text-xs font-bold text-slate-400 group-hover:text-brand-600 flex items-center gap-1 transition-colors">
-                    <span>Login</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </span>
-                </div>
-                <h3 className="text-sm font-bold text-slate-900 group-hover:text-brand-600 transition-colors">
-                  {p.name}
-                </h3>
-                <p className="text-xs font-medium text-slate-600 mt-0.5">
-                  {p.title} &bull; {p.facility}
-                </p>
-                <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">
-                  {p.desc}
-                </p>
-              </button>
-            ))}
+            <div className="flex justify-between py-1 border-b border-rule/50">
+              <span>Relational Tables</span>
+              <span className="text-ink">14 Normalized Entities</span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-rule/50">
+              <span>Active Inpatients</span>
+              <span className="text-ink">400 Synthetic Records</span>
+            </div>
+            <div className="flex justify-between py-1">
+              <span>Authorization</span>
+              <span className="text-ink">Stateless JWT + RBAC</span>
+            </div>
           </div>
         </div>
 
-        {/* Manual Credentials Box */}
-        <div className="max-w-md mx-auto bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 text-center">
-            Or Sign In with Credentials
-          </h3>
+        {/* Right Form & Demo Table */}
+        <div className="md:col-span-7 bg-surface border border-rule p-6 rounded-[2px] shadow-sm space-y-6">
+          <div>
+            <h2 className="font-serif text-xl text-ink font-medium">Access Records</h2>
+            <p className="text-xs text-muted mt-0.5">
+              Sign in with institutional credentials or select an evaluation role.
+            </p>
+          </div>
 
           {error && (
-            <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-xs text-rose-800 font-medium text-center">
+            <div className="p-3 border border-blood/30 bg-blood-soft/20 text-blood font-mono text-xs rounded-[2px]">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleManualLogin} className="space-y-3 text-xs">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Username or Email</label>
-              <input
-                type="text"
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
+          {/* Credentials Form */}
+          <form onSubmit={handleManualLogin} className="space-y-3.5">
+            <Input
+              label="Username or System Identifier"
+              type="text"
+              required
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="e.g. admin, staff_priya"
+            />
 
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Password</label>
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
+            <Input
+              label="Password"
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••••••"
+              helperText="Academic test password: Password@123"
+            />
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2.5 rounded-lg bg-slate-900 hover:bg-black text-white font-bold transition-colors shadow-sm mt-2 disabled:opacity-60"
-            >
-              {loading ? 'Authenticating...' : 'Sign In'}
-            </button>
+            <div className="pt-1">
+              <Button
+                type="submit"
+                variant="primary"
+                loading={loading}
+                className="w-full"
+              >
+                Authenticate Session
+              </Button>
+            </div>
           </form>
+
+          {/* Demonstration Accounts Plain Table */}
+          <div className="pt-5 border-t border-rule space-y-2.5">
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-[11px] uppercase tracking-wider text-muted">
+                Evaluation Roster (One-Click)
+              </p>
+              <span className="text-[10px] font-mono text-muted">Password@123</span>
+            </div>
+
+            <div className="border border-rule rounded-[2px] overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-paper border-b border-rule text-muted uppercase text-[10px] font-mono tracking-wider">
+                    <th className="py-2 px-3">Role</th>
+                    <th className="py-2 px-3">Official</th>
+                    <th className="py-2 px-3">Facility</th>
+                    <th className="py-2 px-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-rule bg-surface font-mono">
+                  {personas.map((p) => (
+                    <tr key={p.username} className="hover:bg-paper transition-colors">
+                      <td className="py-2 px-3 font-semibold text-ink">
+                        <span className={`inline-block ${p.role === 'ADMIN' ? 'text-blood' : 'text-ink'}`}>
+                          {p.role}
+                        </span>
+                      </td>
+                      <td className="py-2 px-3 font-sans text-ink">
+                        <div>{p.name}</div>
+                        <div className="text-[10px] font-mono text-muted">{p.username}</div>
+                      </td>
+                      <td className="py-2 px-3 font-sans text-muted text-[11px]">
+                        {p.facility}
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectPersona(p.username)}
+                          disabled={loading}
+                          className="text-blood hover:text-blood-hover font-sans text-xs underline underline-offset-2"
+                        >
+                          Sign in
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -191,4 +212,3 @@ const Login = () => {
 };
 
 export default Login;
-

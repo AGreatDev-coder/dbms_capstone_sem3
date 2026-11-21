@@ -1,22 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
-import Modal from '../components/Modal';
-import { BloodGroupPill, StatusBadge } from '../components/Badge';
-import {
-  Droplet,
-  Plus,
-  Filter,
-  AlertTriangle,
-  Layers,
-  History,
-  Clock,
-  Sparkles,
-  Database,
-  Building2,
-  CheckCircle,
-} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { PageHeader } from '../components/common/PageHeader';
+import { PageState } from '../components/common/PageState';
+import { Tabs } from '../components/common/Tabs';
+import { Button } from '../components/common/Button';
+import { Input, Select, Textarea } from '../components/common/FormControls';
+import { StatusDot } from '../components/common/StatusDot';
+import { BloodGroupStamp } from '../components/common/BloodGroupStamp';
+import { Modal } from '../components/common/Modal';
+import { Plus } from 'lucide-react';
 
 const BloodBank = () => {
   const { user } = useAuth();
@@ -30,8 +24,8 @@ const BloodBank = () => {
   const [donations, setDonations] = useState([]);
   const [hospitals, setHospitals] = useState([]);
   const [donors, setDonors] = useState([]);
-  const [camps, setCamps] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Filters
   const [bgFilter, setBgFilter] = useState('');
@@ -41,6 +35,7 @@ const BloodBank = () => {
 
   // Add Donation Modal
   const [isAddDonationOpen, setIsAddDonationOpen] = useState(false);
+  const [feedback, setFeedback] = useState(null);
   const [donationForm, setDonationForm] = useState({
     donor_id: '',
     hospital_id: 1,
@@ -64,19 +59,18 @@ const BloodBank = () => {
 
   const fetchInitialData = async () => {
     try {
-      const [hRes, dRes, cRes] = await Promise.all([
+      const [hRes, dRes] = await Promise.all([
         api.get('/hospitals'),
         api.get('/donors'),
-        api.get('/camps'),
       ]);
-      if (hRes.data?.success) setHospitals(hRes.data.hospitals);
+      if (hRes.data?.success) setHospitals(hRes.data.hospitals || []);
       if (dRes.data?.success) {
-        setDonors(dRes.data.donors);
-        if (dRes.data.donors.length > 0) {
-          setDonationForm((prev) => ({ ...prev, donor_id: dRes.data.donors[0].donor_id }));
+        const dList = dRes.data.donors || [];
+        setDonors(dList);
+        if (dList.length > 0) {
+          setDonationForm((prev) => ({ ...prev, donor_id: dList[0].donor_id }));
         }
       }
-      if (cRes.data?.success) setCamps(cRes.data.camps);
     } catch (err) {
       console.error('Initial data fetch error:', err);
     }
@@ -85,6 +79,7 @@ const BloodBank = () => {
   const fetchInventory = async () => {
     try {
       setLoading(true);
+      setError(null);
       const params = {};
       if (bgFilter) params.blood_group = bgFilter;
       if (compFilter) params.component_type = compFilter;
@@ -92,9 +87,12 @@ const BloodBank = () => {
       if (hospFilter) params.hospital_id = hospFilter;
 
       const res = await api.get('/blood-bank/inventory', { params });
-      if (res.data?.success) setInventory(res.data.units);
+      if (res.data?.success) {
+        setInventory(res.data.units || res.data.inventory || []);
+      }
     } catch (err) {
       console.error('Inventory fetch error:', err);
+      setError('Failed to retrieve inventory records from MySQL.');
     } finally {
       setLoading(false);
     }
@@ -103,10 +101,14 @@ const BloodBank = () => {
   const fetchExpiring = async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await api.get('/blood-bank/expiring-soon');
-      if (res.data?.success) setExpiringUnits(res.data.expiringUnits);
+      if (res.data?.success) {
+        setExpiringUnits(res.data.expiringUnits || []);
+      }
     } catch (err) {
       console.error('Expiring fetch error:', err);
+      setError('Failed to run Query 2 CTE expiry tracking.');
     } finally {
       setLoading(false);
     }
@@ -115,10 +117,14 @@ const BloodBank = () => {
   const fetchSummary = async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await api.get('/blood-bank/summary');
-      if (res.data?.success) setSummary(res.data.summary);
+      if (res.data?.success) {
+        setSummary(res.data.summary || []);
+      }
     } catch (err) {
       console.error('Summary fetch error:', err);
+      setError('Failed to load hospital stock matrix.');
     } finally {
       setLoading(false);
     }
@@ -127,10 +133,14 @@ const BloodBank = () => {
   const fetchDonations = async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await api.get('/blood-bank/donations');
-      if (res.data?.success) setDonations(res.data.donations);
+      if (res.data?.success) {
+        setDonations(res.data.donations || []);
+      }
     } catch (err) {
       console.error('Donations fetch error:', err);
+      setError('Failed to load donation logs.');
     } finally {
       setLoading(false);
     }
@@ -142,12 +152,12 @@ const BloodBank = () => {
       const res = await api.post('/blood-bank/donations', donationForm);
       if (res.data?.success) {
         setIsAddDonationOpen(false);
-        alert(res.data.message);
+        setFeedback({ type: 'success', message: res.data.message });
         fetchInventory();
         fetchDonations();
       }
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to record donation');
+      setFeedback({ type: 'error', message: err.response?.data?.message || 'Failed to record donation' });
     }
   };
 
@@ -165,100 +175,68 @@ const BloodBank = () => {
     });
   };
 
+  const tabs = [
+    { id: 'inventory', label: 'Inventory Ledger', count: inventory.length },
+    { id: 'expiring', label: 'Query 2: Expiry CTE', count: expiringUnits.length },
+    { id: 'summary', label: 'Stock Matrix' },
+    { id: 'donations', label: 'Harvest Logs', count: donations.length },
+  ];
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Blood Bank & Inventory Management</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Component inventory, storage status, donation processing, and automated shelf-life tracking.
-          </p>
-        </div>
+      <PageHeader
+        breadcrumb="Component Inventory & Preservation"
+        title="Blood Bank Reserve Ledger"
+        description="Catalog of perishable blood bags, component fractionation (RBC, Platelets, Plasma, Cryo), shelf-life monitoring, and donation harvest logging."
+        badge={`${inventory.length} Cataloged Units`}
+        action={
+          (user?.role === 'ADMIN' || user?.role === 'STAFF') && (
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => setIsAddDonationOpen(true)}
+            >
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              <span>Record Phlebotomy</span>
+            </Button>
+          )
+        }
+      />
 
-        {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
+      {feedback && (
+        <div
+          className={`p-3 border rounded-[2px] text-xs font-mono flex items-center justify-between ${
+            feedback.type === 'success'
+              ? 'border-moss/40 bg-moss/10 text-moss'
+              : 'border-blood/40 bg-blood-soft/20 text-blood'
+          }`}
+        >
+          <span>{feedback.message}</span>
           <button
-            onClick={() => setIsAddDonationOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition-colors"
+            onClick={() => setFeedback(null)}
+            className="text-xs hover:opacity-75 ml-2 font-bold"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Record Blood Donation</span>
+            &times;
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 text-xs">
-        <button
-          onClick={() => setActiveTab('inventory')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'inventory'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Layers className="w-4 h-4" />
-          <span>Blood Inventory ({inventory.length})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('expiring')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'expiring'
-              ? 'border-amber-600 text-amber-700 bg-amber-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <AlertTriangle className="w-4 h-4 text-amber-600" />
-          <span>Query 2: Expiry Tracking CTE</span>
-          {expiringUnits.length > 0 && (
-            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-200 text-amber-900 font-bold">
-              {expiringUnits.length}
-            </span>
-          )}
-        </button>
-
-        <button
-          onClick={() => setActiveTab('summary')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'summary'
-              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Database className="w-4 h-4 text-indigo-600" />
-          <span>Query 3: Hospital Inventory CTE</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('donations')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'donations'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <History className="w-4 h-4" />
-          <span>Donations Log ({donations.length})</span>
-        </button>
-      </div>
+      <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
       {/* TAB 1: INVENTORY TABLE */}
       {activeTab === 'inventory' && (
         <div className="space-y-4">
           {/* Filters */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center gap-3 text-xs">
-            <div className="flex items-center gap-1.5 text-slate-500 font-semibold">
-              <Filter className="w-3.5 h-3.5" />
-              <span>Filters:</span>
-            </div>
-
+          <div className="p-3 bg-surface border border-rule rounded-[2px] flex flex-wrap items-center gap-3 text-xs">
+            <span className="font-mono text-[11px] uppercase tracking-wider text-muted">Filter Reserves:</span>
             <select
               value={bgFilter}
               onChange={(e) => setBgFilter(e.target.value)}
-              className="px-3 py-1.5 border rounded-lg bg-slate-50 text-slate-700 font-medium focus:outline-none"
+              className="px-2 py-1.5 bg-paper border border-rule text-xs text-ink rounded-[2px] focus:outline-none"
             >
-              <option value="">All Blood Groups</option>
+              <option value="">All Phenotypes</option>
               {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
                 <option key={bg} value={bg}>{bg}</option>
               ))}
@@ -267,11 +245,11 @@ const BloodBank = () => {
             <select
               value={compFilter}
               onChange={(e) => setCompFilter(e.target.value)}
-              className="px-3 py-1.5 border rounded-lg bg-slate-50 text-slate-700 font-medium focus:outline-none"
+              className="px-2 py-1.5 bg-paper border border-rule text-xs text-ink rounded-[2px] focus:outline-none"
             >
               <option value="">All Components</option>
               <option value="WHOLE_BLOOD">Whole Blood</option>
-              <option value="RBC">Packed Red Blood Cells (RBC)</option>
+              <option value="RBC">Packed RBC</option>
               <option value="PLATELETS">Platelets</option>
               <option value="PLASMA">Fresh Frozen Plasma</option>
               <option value="CRYO">Cryoprecipitate</option>
@@ -280,9 +258,9 @@ const BloodBank = () => {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-1.5 border rounded-lg bg-slate-50 text-slate-700 font-medium focus:outline-none"
+              className="px-2 py-1.5 bg-paper border border-rule text-xs text-ink rounded-[2px] focus:outline-none"
             >
-              <option value="">All Storage Statuses</option>
+              <option value="">All Storage States</option>
               <option value="AVAILABLE">Available</option>
               <option value="ALLOCATED">Allocated</option>
               <option value="EXPIRED">Expired</option>
@@ -292,350 +270,397 @@ const BloodBank = () => {
             <select
               value={hospFilter}
               onChange={(e) => setHospFilter(e.target.value)}
-              className="px-3 py-1.5 border rounded-lg bg-slate-50 text-slate-700 font-medium focus:outline-none"
+              className="px-2 py-1.5 bg-paper border border-rule text-xs text-ink rounded-[2px] focus:outline-none"
             >
               <option value="">All Hospitals</option>
               {hospitals.map((h) => (
                 <option key={h.hospital_id} value={h.hospital_id}>{h.hospital_name}</option>
               ))}
             </select>
+
+            {(bgFilter || compFilter || statusFilter || hospFilter) && (
+              <button
+                onClick={() => {
+                  setBgFilter('');
+                  setCompFilter('');
+                  setStatusFilter('');
+                  setHospFilter('');
+                }}
+                className="text-xs text-muted hover:text-ink underline ml-auto font-mono"
+              >
+                Clear Filters
+              </button>
+            )}
           </div>
 
-          {/* Units Table */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+          <PageState
+            loading={loading}
+            error={error}
+            empty={inventory.length === 0}
+            emptyTitle="No inventory matches"
+            emptyDescription="No blood units matched the specified storage criteria."
+            onRetry={fetchInventory}
+          >
+            <div className="border border-rule rounded-[2px] bg-surface overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold">
-                    <th className="py-3 px-4">Unit ID</th>
-                    <th className="py-3 px-4">Blood Group</th>
-                    <th className="py-3 px-4">Component</th>
-                    <th className="py-3 px-4">Storage Hospital</th>
-                    <th className="py-3 px-4">Vault Location</th>
-                    <th className="py-3 px-4">Donation Date</th>
-                    <th className="py-3 px-4">Expiry Date</th>
-                    <th className="py-3 px-4">Shelf Life</th>
-                    <th className="py-3 px-4">Status</th>
+                  <tr className="bg-paper border-b border-rule font-mono text-[11px] uppercase tracking-wider text-muted">
+                    <th className="py-2.5 px-3">Unit Tag</th>
+                    <th className="py-2.5 px-3">Phenotype</th>
+                    <th className="py-2.5 px-3">Component Fraction</th>
+                    <th className="py-2.5 px-3">Preservation Facility</th>
+                    <th className="py-2.5 px-3">Storage Bay / Rack</th>
+                    <th className="py-2.5 px-3">Harvest Date</th>
+                    <th className="py-2.5 px-3">Expiry Date</th>
+                    <th className="py-2.5 px-3">Shelf Life Remaining</th>
+                    <th className="py-2.5 px-3 text-right">State</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {inventory.map((unit) => (
-                    <tr key={unit.unit_id} className="hover:bg-slate-50/50">
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">#{unit.unit_id}</td>
-                      <td className="py-3 px-4">
-                        <BloodGroupPill bloodGroup={unit.blood_group} />
-                      </td>
-                      <td className="py-3 px-4 font-medium text-slate-700">{unit.component_type}</td>
-                      <td className="py-3 px-4 text-slate-600">{unit.hospital_name}</td>
-                      <td className="py-3 px-4 font-mono text-slate-500 text-[11px]">{unit.storage_location}</td>
-                      <td className="py-3 px-4 text-slate-500">{unit.donation_date}</td>
-                      <td className="py-3 px-4 font-semibold text-slate-800">{unit.expiry_date}</td>
-                      <td className="py-3 px-4">
-                        {unit.is_expired ? (
-                          <span className="text-rose-600 font-bold">Expired</span>
-                        ) : (
-                          <span className={`font-semibold ${unit.days_to_expiry <= 7 ? 'text-amber-600 font-bold' : 'text-slate-600'}`}>
-                            {unit.days_to_expiry} days left
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <StatusBadge status={unit.storage_status} />
-                      </td>
-                    </tr>
-                  ))}
+                <tbody className="divide-y divide-rule font-mono tabular-nums">
+                  {inventory.map((unit) => {
+                    const daysLeft = unit.days_to_expiry !== undefined ? unit.days_to_expiry : 15;
+                    const isExp = unit.is_expired || daysLeft < 0;
+
+                    return (
+                      <tr key={unit.unit_id} className="hover:bg-paper transition-colors">
+                        <td className="py-2 px-3 font-semibold text-ink">
+                          #{unit.unit_id}
+                        </td>
+                        <td className="py-2 px-3">
+                          <BloodGroupStamp bloodGroup={unit.blood_group} size="sm" />
+                        </td>
+                        <td className="py-2 px-3 font-sans text-ink font-medium">
+                          {unit.component_type}
+                        </td>
+                        <td className="py-2 px-3 font-sans text-muted text-[11px]">
+                          {unit.hospital_name}
+                        </td>
+                        <td className="py-2 px-3 text-muted text-[11px]">
+                          {unit.storage_location}
+                        </td>
+                        <td className="py-2 px-3 text-muted text-[11px]">
+                          {unit.donation_date}
+                        </td>
+                        <td className="py-2 px-3 font-medium text-ink">
+                          {unit.expiry_date}
+                        </td>
+                        <td className="py-2 px-3">
+                          {isExp ? (
+                            <span className="text-blood font-semibold">Expired</span>
+                          ) : (
+                            <span
+                              className={`font-mono text-xs ${
+                                daysLeft <= 2
+                                  ? 'text-blood font-bold'
+                                  : daysLeft <= 7
+                                  ? 'text-ochre font-semibold'
+                                  : 'text-moss'
+                              }`}
+                            >
+                              {daysLeft} days remaining
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <StatusDot status={unit.storage_status} />
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
-          </div>
+          </PageState>
         </div>
       )}
 
       {/* TAB 2: QUERY 2 EXPIRY TRACKING CTE */}
       {activeTab === 'expiring' && (
         <div className="space-y-4">
-          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold">Query 2: CTE Blood Expiry Tracking (WITH ExpiringUnitsCTE AS ...)</p>
-              <p className="text-amber-800 mt-0.5 leading-relaxed">
-                Identifies viable units with <strong>remaining shelf life &le; 7 days</strong>.
-                Expired, allocated, and discarded units are strictly excluded. Prioritizes units requiring immediate transfusion or inter-hospital transfer.
-              </p>
-            </div>
+          <div className="p-4 bg-surface border border-rule rounded-[2px] text-xs space-y-1">
+            <p className="font-mono text-[11px] uppercase tracking-wider text-ochre font-semibold">
+              Query 2 &bull; Common Table Expression (WITH ExpiringUnitsCTE AS ...)
+            </p>
+            <p className="text-muted leading-relaxed">
+              Isolates available bags with remaining shelf life &le; 7 days, excluding already discarded or allocated units.
+              Urgency thresholds apply clinical triage: &lt;48h requires emergency transfer or priority assignment; &lt;7d requires clinical queue monitoring.
+            </p>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+          <PageState
+            loading={loading}
+            error={error}
+            empty={expiringUnits.length === 0}
+            emptyTitle="Zero units approaching expiration"
+            emptyDescription="All available inventory is within safe preservation windows (> 7 days remaining)."
+            onRetry={fetchExpiring}
+          >
+            <div className="border border-rule rounded-[2px] bg-surface overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-amber-50/50 border-b border-amber-200 text-amber-900 uppercase tracking-wider font-semibold">
-                    <th className="py-3 px-4">Unit ID</th>
-                    <th className="py-3 px-4">Blood Group</th>
-                    <th className="py-3 px-4">Component</th>
-                    <th className="py-3 px-4">Hospital</th>
-                    <th className="py-3 px-4">Expiry Date</th>
-                    <th className="py-3 px-4">Shelf Life Remaining</th>
-                    <th className="py-3 px-4">Storage Location</th>
-                    <th className="py-3 px-4">Action Recommendation</th>
+                  <tr className="bg-paper border-b border-rule font-mono text-[11px] uppercase tracking-wider text-muted">
+                    <th className="py-2.5 px-3">Unit Tag</th>
+                    <th className="py-2.5 px-3">Phenotype</th>
+                    <th className="py-2.5 px-3">Component</th>
+                    <th className="py-2.5 px-3">Facility</th>
+                    <th className="py-2.5 px-3">Expiry Date</th>
+                    <th className="py-2.5 px-3">Remaining Window</th>
+                    <th className="py-2.5 px-3">Cold Storage Location</th>
+                    <th className="py-2.5 px-3 text-right">Clinical Protocol</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {expiringUnits.map((u) => (
-                    <tr key={u.unit_id} className="hover:bg-amber-50/20">
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">#{u.unit_id}</td>
-                      <td className="py-3 px-4">
-                        <BloodGroupPill bloodGroup={u.blood_group} />
-                      </td>
-                      <td className="py-3 px-4 font-medium text-slate-700">{u.component_type}</td>
-                      <td className="py-3 px-4 text-slate-600 font-medium">{u.hospital_name}</td>
-                      <td className="py-3 px-4 font-semibold text-slate-900">{u.expiry_date}</td>
-                      <td className="py-3 px-4">
-                        <span className={`inline-flex px-2 py-0.5 rounded font-mono font-bold text-xs ${
-                          u.remaining_shelf_life_days <= 2 ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {u.remaining_shelf_life_days} Days Left
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">{u.storage_location}</td>
-                      <td className="py-3 px-4">
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                          u.remaining_shelf_life_days <= 2 ? 'bg-rose-50 text-rose-700 border border-rose-200 animate-pulse' : 'bg-amber-50 text-amber-700 border border-amber-200'
-                        }`}>
-                          {u.action_recommendation}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                <tbody className="divide-y divide-rule font-mono tabular-nums">
+                  {expiringUnits.map((u) => {
+                    const daysLeft = u.remaining_shelf_life_days;
+                    const isCritical = daysLeft <= 2;
+
+                    return (
+                      <tr key={u.unit_id} className="hover:bg-paper transition-colors">
+                        <td className="py-2.5 px-3 font-semibold text-ink">
+                          #{u.unit_id}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <BloodGroupStamp bloodGroup={u.blood_group} size="sm" />
+                        </td>
+                        <td className="py-2.5 px-3 font-sans text-ink">{u.component_type}</td>
+                        <td className="py-2.5 px-3 font-sans text-muted text-[11px]">{u.hospital_name}</td>
+                        <td className="py-2.5 px-3 font-semibold text-ink">{u.expiry_date}</td>
+                        <td className="py-2.5 px-3">
+                          <span
+                            className={`font-semibold ${
+                              isCritical ? 'text-blood font-bold' : 'text-ochre'
+                            }`}
+                          >
+                            {daysLeft} days remaining
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-muted text-[11px]">{u.storage_location}</td>
+                        <td className="py-2.5 px-3 text-right">
+                          <span
+                            className={`text-[11px] font-sans font-medium ${
+                              isCritical ? 'text-blood font-semibold' : 'text-ochre'
+                            }`}
+                          >
+                            {u.action_recommendation || (isCritical ? 'Immediate Transfusion Standby' : 'Monitor Usage')}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
-          </div>
+          </PageState>
         </div>
       )}
 
-      {/* TAB 3: QUERY 3 HOSPITAL INVENTORY SUMMARY CTE */}
+      {/* TAB 3: STOCK MATRIX GRID */}
       {activeTab === 'summary' && (
         <div className="space-y-4">
-          <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-950 flex items-start gap-3">
-            <Database className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold">Query 3: CTE Hospital-Wise Blood Inventory Summary</p>
-              <p className="text-indigo-800 mt-0.5 leading-relaxed">
-                Aggregates total cataloged units, available bags, units expiring within 7 days, expired bags, and allocated units grouped by hospital and blood group.
-              </p>
-            </div>
+          <div className="p-4 bg-surface border border-rule rounded-[2px] text-xs space-y-1">
+            <p className="font-mono text-[11px] uppercase tracking-wider text-muted font-semibold">
+              Query 3 &bull; Hospital-Wise Conditional Aggregation (Pivot CTE)
+            </p>
+            <p className="text-muted leading-relaxed">
+              Computes multi-dimensional stock matrix evaluating available vs expiring vs expired units by phenotype across regional facilities.
+            </p>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+          <PageState
+            loading={loading}
+            error={error}
+            empty={summary.length === 0}
+            emptyTitle="Stock matrix empty"
+            emptyDescription="No summary aggregation returned."
+            onRetry={fetchSummary}
+          >
+            <div className="border border-rule rounded-[2px] bg-surface overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-indigo-50/50 border-b border-indigo-200 text-indigo-900 uppercase tracking-wider font-semibold">
-                    <th className="py-3 px-4">Hospital Name</th>
-                    <th className="py-3 px-4">City</th>
-                    <th className="py-3 px-4">Blood Group</th>
-                    <th className="py-3 px-4">Available Units</th>
-                    <th className="py-3 px-4">Expiring Soon (&le; 7d)</th>
-                    <th className="py-3 px-4">Expired Units</th>
-                    <th className="py-3 px-4">Allocated Units</th>
-                    <th className="py-3 px-4">Total Cataloged</th>
+                  <tr className="bg-paper border-b border-rule font-mono text-[11px] uppercase tracking-wider text-muted">
+                    <th className="py-2.5 px-3">Hospital Center</th>
+                    <th className="py-2.5 px-3">Phenotype</th>
+                    <th className="py-2.5 px-3 text-right">Available Bags</th>
+                    <th className="py-2.5 px-3 text-right">Expiring &le; 7d</th>
+                    <th className="py-2.5 px-3 text-right">Expired</th>
+                    <th className="py-2.5 px-3 text-right">Allocated</th>
+                    <th className="py-2.5 px-3 text-right">Cataloged Total</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-rule font-mono tabular-nums">
                   {summary.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/50">
-                      <td className="py-3 px-4 font-semibold text-slate-800">{row.hospital_name}</td>
-                      <td className="py-3 px-4 text-slate-600">{row.city}</td>
-                      <td className="py-3 px-4">
-                        <BloodGroupPill bloodGroup={row.blood_group} />
+                    <tr key={`${row.hospital_name}-${row.blood_group}-${idx}`} className="hover:bg-paper transition-colors">
+                      <td className="py-2 px-3 font-sans font-medium text-ink">
+                        {row.hospital_name}
                       </td>
-                      <td className="py-3 px-4 font-bold text-emerald-600">{row.available_units}</td>
-                      <td className="py-3 px-4 font-bold text-amber-600">{row.expiring_soon_7d}</td>
-                      <td className="py-3 px-4 font-bold text-rose-600">{row.expired_units}</td>
-                      <td className="py-3 px-4 font-bold text-purple-600">{row.allocated_units}</td>
-                      <td className="py-3 px-4 font-bold text-slate-900">{row.total_units_cataloged}</td>
+                      <td className="py-2 px-3">
+                        <BloodGroupStamp bloodGroup={row.blood_group} size="sm" />
+                      </td>
+                      <td className={`py-2 px-3 text-right font-semibold ${row.available_units > 0 ? 'text-moss' : 'text-muted'}`}>
+                        {row.available_units}
+                      </td>
+                      <td className={`py-2 px-3 text-right ${row.expiring_soon_7d > 0 ? 'text-ochre font-semibold' : 'text-muted'}`}>
+                        {row.expiring_soon_7d}
+                      </td>
+                      <td className={`py-2 px-3 text-right ${row.expired_units > 0 ? 'text-blood' : 'text-muted'}`}>
+                        {row.expired_units}
+                      </td>
+                      <td className="py-2 px-3 text-right text-muted">
+                        {row.allocated_units}
+                      </td>
+                      <td className="py-2 px-3 text-right font-medium text-ink">
+                        {row.total_units_cataloged}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          </PageState>
         </div>
       )}
 
-      {/* TAB 4: BLOOD DONATIONS LOG */}
+      {/* TAB 4: DONATIONS HARVEST LOGS */}
       {activeTab === 'donations' && (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold">
-                  <th className="py-3 px-4">Donation ID</th>
-                  <th className="py-3 px-4">Donor Name</th>
-                  <th className="py-3 px-4">Blood Group</th>
-                  <th className="py-3 px-4">Collection Date</th>
-                  <th className="py-3 px-4">Quantity (ml)</th>
-                  <th className="py-3 px-4">Hemoglobin (g/dL)</th>
-                  <th className="py-3 px-4">Collection Facility</th>
-                  <th className="py-3 px-4">Camp / Source</th>
-                  <th className="py-3 px-4">Screening</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {donations.map((d) => (
-                  <tr key={d.donation_id} className="hover:bg-slate-50/50">
-                    <td className="py-3 px-4 font-mono font-bold text-slate-900">#{d.donation_id}</td>
-                    <td className="py-3 px-4 font-semibold text-slate-800">{d.donor_name}</td>
-                    <td className="py-3 px-4">
-                      <BloodGroupPill bloodGroup={d.blood_group} />
-                    </td>
-                    <td className="py-3 px-4 text-slate-500">{d.donation_date}</td>
-                    <td className="py-3 px-4 font-bold text-slate-800">{d.quantity_ml} ml</td>
-                    <td className="py-3 px-4 font-semibold text-slate-700">{d.hemoglobin_level}</td>
-                    <td className="py-3 px-4 text-slate-600">{d.hospital_name}</td>
-                    <td className="py-3 px-4 text-slate-500">{d.camp_name}</td>
-                    <td className="py-3 px-4">
-                      <StatusBadge status={d.screening_status} />
-                    </td>
+        <div className="space-y-4">
+          <PageState
+            loading={loading}
+            error={error}
+            empty={donations.length === 0}
+            emptyTitle="No donations recorded"
+            emptyDescription="No blood collections logged in BloodDonation entity."
+            onRetry={fetchDonations}
+          >
+            <div className="border border-rule rounded-[2px] bg-surface overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-paper border-b border-rule font-mono text-[11px] uppercase tracking-wider text-muted">
+                    <th className="py-2.5 px-3">Donation ID</th>
+                    <th className="py-2.5 px-3">Donor Name</th>
+                    <th className="py-2.5 px-3">Phenotype</th>
+                    <th className="py-2.5 px-3">Harvest Facility</th>
+                    <th className="py-2.5 px-3">Collection Date</th>
+                    <th className="py-2.5 px-3">Volume Collected</th>
+                    <th className="py-2.5 px-3">Lab Hemoglobin</th>
+                    <th className="py-2.5 px-3 text-right">Screening Outcome</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-rule font-mono tabular-nums">
+                  {donations.map((d) => (
+                    <tr key={d.donation_id} className="hover:bg-paper transition-colors">
+                      <td className="py-2.5 px-3 font-semibold text-ink">
+                        #{d.donation_id}
+                      </td>
+                      <td className="py-2.5 px-3 font-sans text-ink font-medium">
+                        {d.donor_name}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <BloodGroupStamp bloodGroup={d.blood_group} size="sm" />
+                      </td>
+                      <td className="py-2.5 px-3 font-sans text-muted text-[11px]">{d.hospital_name}</td>
+                      <td className="py-2.5 px-3 text-muted text-[11px]">{d.donation_date}</td>
+                      <td className="py-2.5 px-3 text-ink font-medium">{d.quantity_ml} mL</td>
+                      <td className="py-2.5 px-3 font-semibold text-ink">{d.hemoglobin_level} g/dL</td>
+                      <td className="py-2.5 px-3 text-right">
+                        <StatusDot status={d.screening_status} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </PageState>
         </div>
       )}
 
       {/* Record Blood Donation Modal */}
-      <Modal isOpen={isAddDonationOpen} onClose={() => setIsAddDonationOpen(false)} title="Record Blood Donation & Generate Units">
-        <form onSubmit={handleCreateDonation} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Select Registered Donor *</label>
-            <select
-              required
-              value={donationForm.donor_id}
-              onChange={(e) => setDonationForm({ ...donationForm, donor_id: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
+      <Modal
+        isOpen={isAddDonationOpen}
+        onClose={() => setIsAddDonationOpen(false)}
+        title="Record Voluntary Blood Donation"
+        subtitle="Generates BloodDonation entity and fractionated BloodUnit storage bags"
+      >
+        <form onSubmit={handleCreateDonation} className="space-y-3.5">
+          <Select
+            label="Registered Volunteer Donor"
+            value={donationForm.donor_id}
+            onChange={(e) => setDonationForm({ ...donationForm, donor_id: e.target.value })}
+          >
+            {donors.map((d) => (
+              <option key={d.donor_id} value={d.donor_id}>
+                #{d.donor_id} &bull; {d.name} ({d.blood_group}) &bull; {d.donor_type}
+              </option>
+            ))}
+          </Select>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Select
+              label="Receiving Hospital Facility"
+              value={donationForm.hospital_id}
+              onChange={(e) => setDonationForm({ ...donationForm, hospital_id: parseInt(e.target.value, 10) })}
             >
-              {donors.map((d) => (
-                <option key={d.donor_id} value={d.donor_id}>
-                  #{d.donor_id} - {d.name} ({d.blood_group})
-                </option>
+              {hospitals.map((h) => (
+                <option key={h.hospital_id} value={h.hospital_id}>{h.hospital_name}</option>
               ))}
-            </select>
-          </div>
+            </Select>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Collection Hospital *</label>
-              <select
-                value={donationForm.hospital_id}
-                onChange={(e) => setDonationForm({ ...donationForm, hospital_id: parseInt(e.target.value, 10) })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                {hospitals.map((h) => (
-                  <option key={h.hospital_id} value={h.hospital_id}>{h.hospital_name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Associated Camp (Optional)</label>
-              <select
-                value={donationForm.donation_camp_id}
-                onChange={(e) => setDonationForm({ ...donationForm, donation_camp_id: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                <option value="">Direct In-Hospital Donation</option>
-                {camps.map((c) => (
-                  <option key={c.camp_id} value={c.camp_id}>{c.camp_name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Quantity (ml: CHECK 300 to 550) *</label>
-              <input
-                type="number"
-                min="300"
-                max="550"
-                required
-                value={donationForm.quantity_ml}
-                onChange={(e) => setDonationForm({ ...donationForm, quantity_ml: parseInt(e.target.value, 10) })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Hemoglobin (CHECK &ge; 10.0 g/dL) *</label>
-              <input
-                type="number"
-                step="0.1"
-                min="10.0"
-                required
-                value={donationForm.hemoglobin_level}
-                onChange={(e) => setDonationForm({ ...donationForm, hemoglobin_level: parseFloat(e.target.value) })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
+            <Input
+              label="Hemoglobin Level (g/dL)"
+              type="number"
+              step="0.1"
+              min="12.5"
+              max="20"
+              required
+              value={donationForm.hemoglobin_level}
+              onChange={(e) => setDonationForm({ ...donationForm, hemoglobin_level: parseFloat(e.target.value) })}
+              helperText="CHECK (hemoglobin_level >= 12.5) clinical requirement"
+            />
           </div>
 
           <div>
-            <label className="block font-semibold text-slate-700 mb-1">Select Component Separation Units to Generate</label>
-            <div className="grid grid-cols-3 gap-2 pt-1">
+            <label className="block text-xs font-medium text-ink mb-1.5">
+              Fractionation Components to Catalog:
+            </label>
+            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
               {[
-                { id: 'WHOLE_BLOOD', name: 'Whole Blood (35d)' },
-                { id: 'RBC', name: 'Packed RBC (35d)' },
-                { id: 'PLATELETS', name: 'Platelets (5d)' },
-                { id: 'PLASMA', name: 'Plasma (365d)' },
-                { id: 'CRYO', name: 'Cryoprecipitate (365d)' },
-              ].map((comp) => {
-                const checked = donationForm.component_types.includes(comp.id);
+                { id: 'WHOLE_BLOOD', label: 'Whole Blood (35 days)' },
+                { id: 'RBC', label: 'Packed RBC (42 days)' },
+                { id: 'PLATELETS', label: 'Platelets (5 days - Shaker)' },
+                { id: 'PLASMA', label: 'Fresh Frozen Plasma (365 days)' },
+              ].map((c) => {
+                const isChecked = donationForm.component_types.includes(c.id);
                 return (
                   <button
-                    key={comp.id}
+                    key={c.id}
                     type="button"
-                    onClick={() => toggleComponentType(comp.id)}
-                    className={`p-2 rounded-lg border text-left text-xs font-semibold transition-all ${
-                      checked ? 'bg-brand-50 border-brand-500 text-brand-700' : 'bg-slate-50 border-slate-200 text-slate-600'
+                    onClick={() => toggleComponentType(c.id)}
+                    className={`p-2 border rounded-[2px] text-left transition-colors ${
+                      isChecked
+                        ? 'border-blood bg-blood-soft/20 text-blood font-semibold'
+                        : 'border-rule bg-paper text-muted hover:border-ink'
                     }`}
                   >
-                    <div className="flex items-center gap-1.5">
-                      <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${checked ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300'}`}>
-                        {checked && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
-                      </span>
-                      <span>{comp.name}</span>
-                    </div>
+                    {c.label}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Phlebotomy Remarks</label>
-            <input
-              type="text"
-              value={donationForm.remarks}
-              onChange={(e) => setDonationForm({ ...donationForm, remarks: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-            />
-          </div>
+          <Textarea
+            label="Technologist Screening Remarks"
+            rows={2}
+            value={donationForm.remarks}
+            onChange={(e) => setDonationForm({ ...donationForm, remarks: e.target.value })}
+          />
 
-          <div className="pt-4 border-t flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setIsAddDonationOpen(false)}
-              className="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50"
-            >
+          <div className="pt-3 border-t border-rule flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setIsAddDonationOpen(false)}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-brand-600 text-white font-bold rounded-lg hover:bg-brand-700 shadow-sm"
-            >
-              Record Collection & Generate Units
-            </button>
+            </Button>
+            <Button type="submit" variant="primary">
+              Log Harvest & Generate Units
+            </Button>
           </div>
         </form>
       </Modal>
@@ -644,4 +669,3 @@ const BloodBank = () => {
 };
 
 export default BloodBank;
-

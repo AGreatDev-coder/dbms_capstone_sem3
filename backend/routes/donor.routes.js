@@ -7,6 +7,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/db');
 const { authenticateToken, authorizeRoles } = require('../middleware/auth');
+const { handleMySQLError } = require('../utils/errorHandler');
 
 // Get all donors with Person supertype attributes, donation counts, search, and pagination
 router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'), async (req, res) => {
@@ -53,7 +54,7 @@ router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'), as
       WHERE ${whereClause}
     `;
     const countResult = await db.query(countSql, params);
-    const total = countResult[0]?.total || 0;
+    const total = Number(countResult[0]?.total) || 0;
 
     const allowedSortFields = {
       donor_id: 'd.donor_id',
@@ -112,13 +113,11 @@ router.get('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'), as
       donors,
     });
   } catch (err) {
-    console.error('Donor retrieve error:', err);
-    res.status(500).json({ success: false, message: 'Failed to retrieve donors from database.' });
+    handleMySQLError(err, res, 'Failed to retrieve donors from database.');
   }
 });
 
 // Query 4 Implementation: Public Donor Directory View (Data Masking)
-// Reads directly from MySQL View: vw_public_donor_directory
 const handlePublicDirectory = async (req, res) => {
   try {
     const { blood_group, city } = req.query;
@@ -138,27 +137,26 @@ const handlePublicDirectory = async (req, res) => {
       SELECT * 
       FROM vw_public_donor_directory
       WHERE ${conditions.join(' AND ')}
-      LIMIT 100
+      ORDER BY donor_id ASC
     `;
-    const directory = await db.query(sql, params);
+
+    const donors = await db.query(sql, params);
 
     res.json({
       success: true,
-      count: directory.length,
-      view_name: 'vw_public_donor_directory',
-      directory,
-      donors: directory,
+      count: donors.length,
+      donors,
+      view_applied: 'vw_public_donor_directory (Query 4 Masked Projection)',
     });
   } catch (err) {
-    console.error('Public directory error:', err);
-    res.status(500).json({ success: false, message: 'Failed to retrieve donor directory from database view.' });
+    handleMySQLError(err, res, 'Failed to retrieve public donor directory view.');
   }
 };
 
-router.get('/directory', handlePublicDirectory);
 router.get('/public-directory', handlePublicDirectory);
+router.get('/query4-view', handlePublicDirectory);
 
-// Get single donor with full history
+// Get single donor with complete donation history
 router.get('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'), async (req, res) => {
   try {
     const donorId = parseInt(req.params.id, 10);
@@ -182,17 +180,34 @@ router.get('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'),
       WHERE d.donor_id = ?
     `;
     const donorRows = await db.query(donorSql, [donorId]);
+
     if (donorRows.length === 0) {
       return res.status(404).json({ success: false, message: 'Donor not found.' });
     }
 
     const donor = donorRows[0];
 
-    // Donations history
+    // RBAC: DONOR can only view their own history
+    if (req.user.role === 'DONOR') {
+      const isOwner =
+        (req.user.donor_id && Number(req.user.donor_id) === donorId) ||
+        (req.user.person_id && Number(req.user.person_id) === Number(donor.person_id));
+      if (!isOwner) {
+        return res.status(403).json({
+          success: false,
+          message: 'Forbidden: Donors are only authorized to view their own profile and history.',
+        });
+      }
+    }
+
+    // Blood donations history
     const donationsSql = `
-      SELECT bd.*, h.hospital_name, c.camp_name
+      SELECT 
+        bd.*,
+        h.hospital_name,
+        COALESCE(c.camp_name, 'In-Hospital Phlebotomy') AS camp_name
       FROM BloodDonation bd
-      LEFT JOIN Hospital h ON bd.hospital_id = h.hospital_id
+      JOIN Hospital h ON bd.hospital_id = h.hospital_id
       LEFT JOIN DonationCamp c ON bd.donation_camp_id = c.camp_id
       WHERE bd.donor_id = ?
       ORDER BY bd.donation_date DESC
@@ -206,27 +221,26 @@ router.get('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'),
       WHERE donor_id = ?
       ORDER BY registration_date DESC
     `;
-    const organDonations = await db.query(organDonationsSql, [donorId]);
+    const organPledges = await db.query(organDonationsSql, [donorId]);
 
     res.json({
       success: true,
       donor: {
         ...donor,
         donations,
-        organDonations,
+        organPledges,
       },
     });
   } catch (err) {
-    console.error('Donor detail error:', err);
-    res.status(500).json({ success: false, message: 'Failed to retrieve donor details.' });
+    handleMySQLError(err, res, 'Failed to retrieve donor details.');
   }
 });
 
-// Register new donor
-router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+// Register new donor (ADMIN, STAFF, DONOR)
+router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'), async (req, res) => {
   const conn = await db.getConnection();
   if (!conn) {
-    return res.status(500).json({ success: false, message: 'Database connection unavailable.' });
+    return res.status(500).json({ success: false, message: 'Database connection pool unavailable.' });
   }
 
   try {
@@ -234,39 +248,72 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
       first_name,
       last_name,
       date_of_birth,
-      gender,
+      gender = 'OTHER',
       phone,
       email,
-      address,
-      city,
-      state,
-      pincode,
+      address = 'City Center',
+      city = 'New Delhi',
+      state = 'Delhi',
+      pincode = '110001',
       blood_group,
       donor_type = 'BLOOD',
       availability_status = 'AVAILABLE',
       medical_history_notes,
+      weight_kg,
     } = req.body;
 
-    if (!first_name || !last_name || !phone || !blood_group) {
+    const fields = {};
+    if (!first_name || !first_name.trim()) fields.first_name = 'First name is required.';
+    if (!last_name || !last_name.trim()) fields.last_name = 'Last name is required.';
+    if (!phone || !phone.trim()) fields.phone = 'Phone number is required.';
+    if (!blood_group) fields.blood_group = 'Blood group is required.';
+
+    // Server-side eligibility checks: Age >= 18
+    if (date_of_birth) {
+      const birthDate = new Date(date_of_birth);
+      const ageDiff = Date.now() - birthDate.getTime();
+      const ageDate = new Date(ageDiff);
+      const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+      if (age < 18) {
+        fields.date_of_birth = `Donor must be at least 18 years of age (Current age: ${age}).`;
+      }
+    }
+
+    // Weight check (if provided, must be >= 45 kg)
+    if (weight_kg && Number(weight_kg) < 45) {
+      fields.weight_kg = 'Minimum weight of 45 kg is required for clinical donor eligibility.';
+    }
+
+    if (Object.keys(fields).length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'First name, last name, phone, and blood group are required.',
+        message: 'Donor eligibility requirements not met.',
+        fields,
       });
     }
 
     await conn.query('START TRANSACTION');
 
     // 1. Check or insert Person
-    const [existingPerson] = await conn.query('SELECT person_id FROM Person WHERE phone = ?', [phone]);
-    let personId;
+    let personId = req.user.role === 'DONOR' ? req.user.person_id : null;
 
-    if (existingPerson.length > 0) {
-      personId = existingPerson[0].person_id;
-      // Check if already registered as donor
+    if (!personId) {
+      const [existingPerson] = await conn.query('SELECT person_id FROM Person WHERE phone = ?', [phone.trim()]);
+      if (existingPerson.length > 0) {
+        personId = existingPerson[0].person_id;
+      }
+    }
+
+    if (personId) {
+      // Check if already registered as a donor
       const [existingDonor] = await conn.query('SELECT donor_id FROM Donor WHERE person_id = ?', [personId]);
       if (existingDonor.length > 0) {
         await conn.query('ROLLBACK');
-        return res.status(409).json({ success: false, message: 'This person is already registered as a donor.' });
+        return res.status(409).json({
+          success: false,
+          message: `This person is already registered as a donor (Donor #${existingDonor[0].donor_id}).`,
+          fields: { phone: 'Donor profile already exists for this person.' },
+        });
       }
     } else {
       const personInsertSql = `
@@ -275,19 +322,19 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       const [personResult] = await conn.query(personInsertSql, [
-        first_name,
-        last_name,
+        first_name.trim(),
+        last_name.trim(),
         date_of_birth || '1995-05-15',
-        gender || 'OTHER',
-        phone,
-        email || `donor_${Date.now()}@lifelink.network`,
-        address || 'City Center',
-        city || 'Delhi',
-        state || 'Delhi',
-        pincode || '110001',
+        gender,
+        phone.trim(),
+        email?.trim() || `donor_${Date.now()}@lifelink.network`,
+        address?.trim() || 'City Center',
+        city?.trim() || 'Delhi',
+        state?.trim() || 'Delhi',
+        pincode?.trim() || '110001',
         blood_group,
         'Self',
-        phone,
+        phone.trim(),
       ]);
       personId = personResult.insertId;
     }
@@ -308,25 +355,34 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req
 
     await conn.query('COMMIT');
 
+    const createdDonor = {
+      donor_id: donorResult.insertId,
+      person_id: personId,
+      name: `${first_name.trim()} ${last_name.trim()}`,
+      blood_group,
+      donor_type,
+      availability_status,
+    };
+
     res.status(201).json({
       success: true,
       donor_id: donorResult.insertId,
+      donor: createdDonor,
       message: `Donor registered successfully (Donor ID: ${donorResult.insertId}).`,
     });
   } catch (err) {
     await conn.query('ROLLBACK');
-    console.error('Donor register error:', err);
-    res.status(500).json({ success: false, message: `Failed to register donor: ${err.message}` });
+    handleMySQLError(err, res, 'Failed to register donor.');
   } finally {
     conn.release();
   }
 });
 
-// Update donor availability, medical notes, or contact info
-router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+// Update donor availability, medical notes, or contact info (ADMIN, STAFF, DONOR)
+router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF', 'DONOR'), async (req, res) => {
   const conn = await db.getConnection();
   if (!conn) {
-    return res.status(500).json({ success: false, message: 'Database connection unavailable.' });
+    return res.status(500).json({ success: false, message: 'Database connection pool unavailable.' });
   }
 
   try {
@@ -339,6 +395,16 @@ router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (r
     }
     const currentDonor = dRows[0];
 
+    // RBAC: DONOR can only update their own record
+    if (req.user.role === 'DONOR') {
+      const isOwner =
+        (req.user.donor_id && Number(req.user.donor_id) === donorId) ||
+        (req.user.person_id && Number(req.user.person_id) === Number(currentDonor.person_id));
+      if (!isOwner) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You can only update your own donor profile.' });
+      }
+    }
+
     await conn.query('START TRANSACTION');
 
     const updateDonorSql = `
@@ -350,6 +416,7 @@ router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (r
         medical_history_notes = COALESCE(?, medical_history_notes)
       WHERE donor_id = ?
     `;
+
     await conn.query(updateDonorSql, [
       donor_type || null,
       availability_status || null,
@@ -374,64 +441,11 @@ router.put('/:id', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (r
 
     res.json({
       success: true,
-      message: `Donor ${donorId} updated successfully.`,
+      message: `Donor #${donorId} profile updated successfully.`,
     });
   } catch (err) {
     await conn.query('ROLLBACK');
-    console.error('Donor update error:', err);
-    res.status(500).json({ success: false, message: `Failed to update donor: ${err.message}` });
-  } finally {
-    conn.release();
-  }
-});
-
-// Delete donor with referential integrity check
-router.delete('/:id', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
-  const conn = await db.getConnection();
-  if (!conn) {
-    return res.status(500).json({ success: false, message: 'Database connection unavailable.' });
-  }
-
-  try {
-    const donorId = parseInt(req.params.id, 10);
-
-    const [donations] = await conn.query('SELECT COUNT(*) AS c FROM BloodDonation WHERE donor_id = ?', [donorId]);
-    const [units] = await conn.query('SELECT COUNT(*) AS c FROM BloodUnit WHERE donor_id = ?', [donorId]);
-    const [organs] = await conn.query('SELECT COUNT(*) AS c FROM OrganDonation WHERE donor_id = ?', [donorId]);
-
-    if (donations[0].c > 0 || units[0].c > 0 || organs[0].c > 0) {
-      return res.status(409).json({
-        success: false,
-        message: `Referential Integrity: Donor cannot be deleted because ${donations[0].c} blood donation(s), ${units[0].c} blood unit(s), or ${organs[0].c} organ donation(s) reference this record.`,
-      });
-    }
-
-    const [dRows] = await conn.query('SELECT person_id FROM Donor WHERE donor_id = ?', [donorId]);
-    if (dRows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Donor not found.' });
-    }
-    const personId = dRows[0].person_id;
-
-    await conn.query('START TRANSACTION');
-    await conn.query('DELETE FROM Donor WHERE donor_id = ?', [donorId]);
-
-    const [patientCheck] = await conn.query('SELECT COUNT(*) AS c FROM Patient WHERE person_id = ?', [personId]);
-    const [staffCheck] = await conn.query('SELECT COUNT(*) AS c FROM Staff WHERE person_id = ?', [personId]);
-
-    if (patientCheck[0].c === 0 && staffCheck[0].c === 0) {
-      await conn.query('DELETE FROM Person WHERE person_id = ?', [personId]);
-    }
-
-    await conn.query('COMMIT');
-
-    res.json({
-      success: true,
-      message: `Donor ${donorId} deleted successfully.`,
-    });
-  } catch (err) {
-    await conn.query('ROLLBACK');
-    console.error('Donor delete error:', err);
-    res.status(500).json({ success: false, message: `Failed to delete donor: ${err.message}` });
+    handleMySQLError(err, res, 'Failed to update donor profile.');
   } finally {
     conn.release();
   }

@@ -1,20 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import Modal from '../components/Modal';
-import { StatusBadge, BloodGroupPill } from '../components/Badge';
-import {
-  Tent,
-  Plus,
-  Calendar,
-  MapPin,
-  Users,
-  Droplet,
-  Database,
-  BarChart2,
-  CheckCircle2,
-  Clock,
-  Sparkles,
-} from 'lucide-react';
+import PageHeader from '../components/common/PageHeader';
+import PageState from '../components/common/PageState';
+import Tabs from '../components/common/Tabs';
+import Button from '../components/common/Button';
+import Modal from '../components/common/Modal';
+import { Input, Select } from '../components/common/FormControls';
+import StatusDot from '../components/common/StatusDot';
+import BloodGroupStamp from '../components/common/BloodGroupStamp';
+import { Plus, Users, Calendar, MapPin, Building2, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const DonationCamps = () => {
@@ -25,6 +19,7 @@ const DonationCamps = () => {
   const [hospitals, setHospitals] = useState([]);
   const [donors, setDonors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Modals
   const [isCreateCampOpen, setIsCreateCampOpen] = useState(false);
@@ -61,10 +56,10 @@ const DonationCamps = () => {
         api.get('/hospitals'),
         api.get('/donors'),
       ]);
-      if (hRes.data?.success) setHospitals(hRes.data.hospitals);
+      if (hRes.data?.success) setHospitals(hRes.data.hospitals || []);
       if (dRes.data?.success) {
-        setDonors(dRes.data.donors);
-        if (dRes.data.donors.length > 0) setSelectedDonorId(dRes.data.donors[0].donor_id);
+        setDonors(dRes.data.donors || []);
+        if (dRes.data.donors?.length > 0) setSelectedDonorId(dRes.data.donors[0].donor_id);
       }
     } catch (err) {
       console.error('Initial data fetch error:', err);
@@ -74,10 +69,11 @@ const DonationCamps = () => {
   const fetchCamps = async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await api.get('/camps');
-      if (res.data?.success) setCamps(res.data.camps);
+      if (res.data?.success) setCamps(res.data.camps || []);
     } catch (err) {
-      console.error('Camps fetch error:', err);
+      setError(err.response?.data?.message || 'Failed to load donation camps.');
     } finally {
       setLoading(false);
     }
@@ -86,10 +82,11 @@ const DonationCamps = () => {
   const fetchCampStats = async () => {
     try {
       setLoading(true);
+      setError(null);
       const res = await api.get('/camps/stats');
-      if (res.data?.success) setCampStats(res.data.stats);
+      if (res.data?.success) setCampStats(res.data.stats || []);
     } catch (err) {
-      console.error('Camp stats fetch error:', err);
+      setError(err.response?.data?.message || 'Failed to load camp aggregates.');
     } finally {
       setLoading(false);
     }
@@ -101,7 +98,6 @@ const DonationCamps = () => {
       const res = await api.post('/camps', campForm);
       if (res.data?.success) {
         setIsCreateCampOpen(false);
-        alert(res.data.message);
         fetchCamps();
       }
     } catch (err) {
@@ -124,7 +120,6 @@ const DonationCamps = () => {
       });
       if (res.data?.success) {
         setIsRegisterDonorOpen(false);
-        alert(res.data.message);
         fetchCamps();
       }
     } catch (err) {
@@ -138,7 +133,7 @@ const DonationCamps = () => {
       if (res.data?.success) {
         setCampDonorsList({
           camp_name: camp.camp_name,
-          donors: res.data.donors,
+          donors: res.data.donors || [],
         });
       }
     } catch (err) {
@@ -146,178 +141,178 @@ const DonationCamps = () => {
     }
   };
 
+  const tabs = [
+    { id: 'camps', label: 'All Donation Camps', count: camps.length },
+    { id: 'stats', label: 'Query 7: Camp Performance Aggregates (HAVING >= 2)', count: campStats.length },
+  ];
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Donation Camps & Community Drives</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Modeled as an <strong>EER Aggregation Object</strong> linking camps, participating donors, and batch blood collection activities.
-          </p>
-        </div>
-
-        {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
-          <button
-            onClick={() => setIsCreateCampOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Organize Donation Camp</span>
-          </button>
-        )}
-      </div>
+      <PageHeader
+        breadcrumbs={['07 OUTREACH', 'CAMPS']}
+        title="Donation Camps"
+        description="Community blood drives modeled as an EER aggregation object linking donors, camps, and phlebotomy collections."
+        action={
+          (user?.role === 'ADMIN' || user?.role === 'STAFF') && (
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Plus}
+              onClick={() => setIsCreateCampOpen(true)}
+            >
+              Organize Camp
+            </Button>
+          )
+        }
+      />
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 text-xs">
-        <button
-          onClick={() => setActiveTab('camps')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'camps'
-              ? 'border-brand-600 text-brand-600'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Tent className="w-4 h-4" />
-          <span>All Donation Camps ({camps.length})</span>
-        </button>
+      <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
-        <button
-          onClick={() => setActiveTab('stats')}
-          className={`flex items-center gap-2 px-4 py-2.5 font-bold border-b-2 transition-all ${
-            activeTab === 'stats'
-              ? 'border-indigo-600 text-indigo-700 bg-indigo-50/50'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
-          }`}
-        >
-          <Database className="w-4 h-4 text-indigo-600" />
-          <span>Query 7: Camp Performance Aggregates (HAVING &ge; 2)</span>
-        </button>
-      </div>
-
-      {/* TAB 1: CAMPS CARDS GRID */}
+      {/* Tab 1: All Camps */}
       {activeTab === 'camps' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          {camps.map((camp) => (
-            <div key={camp.camp_id} className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm space-y-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 rounded-lg bg-teal-50 text-teal-700">
-                    <Tent className="w-5 h-5" />
+        <PageState
+          loading={loading}
+          error={error}
+          onRetry={fetchCamps}
+          empty={camps.length === 0}
+          emptyMessage="No donation camps currently scheduled."
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {camps.map((camp) => (
+              <div
+                key={camp.camp_id}
+                className="border border-rule bg-surface p-4 space-y-3 font-sans"
+              >
+                <div className="flex items-start justify-between gap-3 pb-3 border-b border-rule">
+                  <div>
+                    <div className="font-mono text-[10px] text-muted uppercase">Camp #{camp.camp_id}</div>
+                    <h3 className="font-serif text-base font-semibold text-ink leading-snug">
+                      {camp.camp_name}
+                    </h3>
+                    <div className="text-xs text-muted mt-0.5">
+                      Organized by {camp.organizer}
+                    </div>
+                  </div>
+                  <StatusDot status={camp.camp_status} />
+                </div>
+
+                <div className="space-y-1 text-xs text-muted">
+                  <div className="flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-muted shrink-0" />
+                    <span>{camp.location}, {camp.city}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                    <Calendar className="w-3.5 h-3.5 text-muted shrink-0" />
+                    <span>{camp.start_date.slice(0, 10)} to {camp.end_date.slice(0, 10)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-muted shrink-0" />
+                    <span>Hospital: <strong className="text-ink font-medium">{camp.hospital_name}</strong></span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 py-2 border-y border-rule text-center font-mono">
+                  <div>
+                    <span className="text-[10px] uppercase text-muted block">Target</span>
+                    <span className="text-xs font-semibold text-ink">{camp.capacity}</span>
+                  </div>
+                  <div
+                    className="cursor-pointer hover:bg-paper/50"
+                    onClick={() => handleViewDonors(camp)}
+                  >
+                    <span className="text-[10px] uppercase text-muted block">Registered</span>
+                    <span className="text-xs font-semibold text-ink underline">{camp.registered_donors_count}</span>
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900 leading-tight">{camp.camp_name}</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Organized by {camp.organizer}</p>
+                    <span className="text-[10px] uppercase text-muted block">Units Collected</span>
+                    <span className="text-xs font-semibold text-blood">{camp.total_donations_collected}</span>
                   </div>
                 </div>
-                <StatusBadge status={camp.camp_status} />
-              </div>
 
-              <div className="space-y-1.5 text-xs text-slate-600 pt-2 border-t border-slate-100">
-                <p className="flex items-center gap-1.5 truncate">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span>{camp.location}, {camp.city}</span>
-                </p>
-                <p className="flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span>Dates: <strong>{camp.start_date.slice(0, 10)}</strong> to <strong>{camp.end_date.slice(0, 10)}</strong></span>
-                </p>
-                <p className="flex items-center gap-1.5">
-                  <Droplet className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span>Affiliated Hospital: <strong className="text-slate-800">{camp.hospital_name}</strong></span>
-                </p>
-              </div>
-
-              {/* Statistics & Participation */}
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 text-center">
-                <div className="p-2 rounded-lg bg-slate-50">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Capacity</span>
-                  <span className="font-bold text-xs text-slate-900">{camp.capacity} Donors</span>
-                </div>
-                <div className="p-2 rounded-lg bg-slate-50 cursor-pointer hover:bg-slate-100" onClick={() => handleViewDonors(camp)}>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Registered</span>
-                  <span className="font-bold text-xs text-indigo-700 underline">{camp.registered_donors_count}</span>
-                </div>
-                <div className="p-2 rounded-lg bg-slate-50">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Units Donated</span>
-                  <span className="font-bold text-xs text-brand-600">{camp.total_donations_collected} units</span>
+                <div className="flex items-center justify-between pt-1">
+                  <button
+                    onClick={() => handleViewDonors(camp)}
+                    className="text-xs text-muted hover:text-ink underline flex items-center gap-1 font-mono"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Participants ({camp.registered_donors_count})</span>
+                  </button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleOpenRegister(camp)}
+                  >
+                    Register Donor
+                  </Button>
                 </div>
               </div>
-
-              {/* Action Buttons */}
-              <div className="pt-2 flex items-center justify-between">
-                <button
-                  onClick={() => handleViewDonors(camp)}
-                  className="text-xs text-slate-600 hover:text-slate-900 font-semibold flex items-center gap-1"
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>View Participant List</span>
-                </button>
-                <button
-                  onClick={() => handleOpenRegister(camp)}
-                  className="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-900 text-white hover:bg-black transition-colors"
-                >
-                  Register Donor
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </PageState>
       )}
 
-      {/* TAB 2: QUERY 7 AGGREGATE FUNCTIONS & HAVING */}
+      {/* Tab 2: Query 7 Aggregate Functions & HAVING */}
       {activeTab === 'stats' && (
         <div className="space-y-4">
-          <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-200 text-xs text-indigo-950 flex items-start gap-3">
-            <Sparkles className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold">Query 7: Aggregate Functions with GROUP BY & HAVING (COUNT, SUM, AVG, MIN, MAX)</p>
-              <p className="text-indigo-800 mt-0.5 leading-relaxed">
-                Demonstrates multi-attribute aggregation calculating total units collected, total ml collected, average hemoglobin level,
-                minimum single donation ml, and maximum ml.
-                Filtered by <strong>HAVING COUNT(bd.donation_id) &ge; 2</strong> to highlight high-impact camps.
-              </p>
+          <div className="p-3 border border-rule bg-surface text-xs space-y-1">
+            <div className="font-mono text-[11px] uppercase tracking-wider text-ink font-semibold">
+              Query 7: Multi-Attribute Aggregates with GROUP BY & HAVING
             </div>
+            <p className="text-muted leading-relaxed">
+              Calculates <code className="font-mono text-ink">COUNT(bd.donation_id)</code>, 
+              <code className="font-mono text-ink">SUM(bd.quantity_ml)</code>, 
+              <code className="font-mono text-ink">AVG(bd.hemoglobin_level)</code>, 
+              <code className="font-mono text-ink">MIN(bd.quantity_ml)</code>, and 
+              <code className="font-mono text-ink">MAX(bd.quantity_ml)</code>. 
+              Restricted to high-impact drives via <code className="font-mono text-ink">HAVING COUNT(bd.donation_id) &gt;= 2</code>.
+            </p>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
+          <PageState
+            loading={loading}
+            error={error}
+            onRetry={fetchCampStats}
+            empty={campStats.length === 0}
+            emptyMessage="No camps currently satisfy HAVING COUNT(bd.donation_id) >= 2."
+          >
+            <div className="border border-rule bg-surface overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-indigo-50/50 border-b border-indigo-200 text-indigo-900 uppercase tracking-wider font-semibold">
-                    <th className="py-3 px-4">Camp ID</th>
-                    <th className="py-3 px-4">Camp Name</th>
-                    <th className="py-3 px-4">Supervising Hospital</th>
-                    <th className="py-3 px-4 font-bold">COUNT(donations)</th>
-                    <th className="py-3 px-4 font-bold">SUM(quantity_ml)</th>
-                    <th className="py-3 px-4 font-bold">AVG(hemoglobin)</th>
-                    <th className="py-3 px-4">MIN(ml)</th>
-                    <th className="py-3 px-4">MAX(ml)</th>
+                  <tr className="border-b border-rule bg-paper/60 text-[10px] font-mono uppercase tracking-wider text-muted">
+                    <th className="py-2.5 px-3 font-semibold">Camp ID</th>
+                    <th className="py-2.5 px-3 font-semibold">Camp Title</th>
+                    <th className="py-2.5 px-3 font-semibold">Supervising Facility</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">COUNT (Units)</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">SUM (ml)</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">AVG (Hb g/dL)</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">MIN (ml)</th>
+                    <th className="py-2.5 px-3 font-semibold text-right">MAX (ml)</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-rule font-sans">
                   {campStats.map((st) => (
-                    <tr key={st.camp_id} className="hover:bg-slate-50/50">
-                      <td className="py-3 px-4 font-mono font-bold text-slate-900">#{st.camp_id}</td>
-                      <td className="py-3 px-4 font-semibold text-slate-800">{st.camp_name}</td>
-                      <td className="py-3 px-4 text-slate-600">{st.hospital_name}</td>
-                      <td className="py-3 px-4 font-mono font-bold text-indigo-700 text-sm">
-                        {st.total_donations_collected} units
+                    <tr key={st.camp_id} className="hover:bg-paper/40 transition-colors h-10 font-mono">
+                      <td className="py-2 px-3 font-semibold text-ink">#{st.camp_id}</td>
+                      <td className="py-2 px-3 font-sans font-medium text-ink">{st.camp_name}</td>
+                      <td className="py-2 px-3 font-sans text-muted">{st.hospital_name}</td>
+                      <td className="py-2 px-3 font-bold text-blood text-right">
+                        {st.total_donations_collected}
                       </td>
-                      <td className="py-3 px-4 font-mono font-bold text-brand-600">
+                      <td className="py-2 px-3 text-right text-ink font-semibold">
                         {st.total_blood_collected_ml} ml
                       </td>
-                      <td className="py-3 px-4 font-mono font-bold text-emerald-700">
-                        {st.average_donor_hemoglobin} g/dL
+                      <td className="py-2 px-3 text-right text-moss font-semibold">
+                        {st.average_donor_hemoglobin}
                       </td>
-                      <td className="py-3 px-4 font-mono text-slate-600">{st.min_donation_ml} ml</td>
-                      <td className="py-3 px-4 font-mono text-slate-600">{st.max_donation_ml} ml</td>
+                      <td className="py-2 px-3 text-right text-muted">{st.min_donation_ml}</td>
+                      <td className="py-2 px-3 text-right text-muted">{st.max_donation_ml}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </div>
+          </PageState>
         </div>
       )}
 
@@ -325,43 +320,32 @@ const DonationCamps = () => {
       <Modal
         isOpen={isRegisterDonorOpen}
         onClose={() => setIsRegisterDonorOpen(false)}
-        title={`Register Donor: ${selectedCampForReg?.camp_name}`}
+        title={`Register Donor: ${selectedCampForReg?.camp_name || ''}`}
+        subtitle="Appends record to CampDonorRegistration junction table (EER Aggregation)."
       >
-        <form onSubmit={handleRegisterDonor} className="space-y-4 text-xs">
-          <p className="text-slate-500 text-[11px] pb-2 border-b">
-            Inserts a row into the <strong>CampDonorRegistration</strong> junction table, realizing the EER aggregation relationship.
-          </p>
+        <form onSubmit={handleRegisterDonor} className="space-y-4">
+          <Select
+            label="Select Registered Donor"
+            required
+            value={selectedDonorId}
+            onChange={(e) => setSelectedDonorId(e.target.value)}
+            options={donors.map((d) => ({
+              value: d.donor_id,
+              label: `#${d.donor_id} - ${d.name} (${d.blood_group})`,
+            }))}
+          />
 
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Select Registered Donor *</label>
-            <select
-              required
-              value={selectedDonorId}
-              onChange={(e) => setSelectedDonorId(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-            >
-              {donors.map((d) => (
-                <option key={d.donor_id} value={d.donor_id}>
-                  #{d.donor_id} - {d.name} ({d.blood_group})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="pt-4 border-t flex justify-end gap-2">
-            <button
+          <div className="pt-3 border-t border-rule flex justify-end gap-2">
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setIsRegisterDonorOpen(false)}
-              className="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50"
             >
               Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-brand-600 text-white font-bold rounded-lg hover:bg-brand-700 shadow-sm"
-            >
+            </Button>
+            <Button type="submit" variant="primary">
               Confirm Registration
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>
@@ -370,24 +354,25 @@ const DonationCamps = () => {
       <Modal
         isOpen={Boolean(campDonorsList)}
         onClose={() => setCampDonorsList(null)}
-        title={`Registered Donors: ${campDonorsList?.camp_name}`}
+        title={`Registered Participants: ${campDonorsList?.camp_name || ''}`}
+        subtitle="Junction records linking donors to scheduled camp drive."
       >
-        <div className="space-y-3 text-xs">
+        <div className="space-y-3 text-xs font-sans">
           {campDonorsList?.donors?.length === 0 ? (
-            <p className="text-slate-500 italic py-4 text-center">No donors registered yet for this camp.</p>
+            <p className="text-muted italic py-4 text-center border border-rule bg-paper">
+              No donors registered yet for this camp.
+            </p>
           ) : (
-            <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+            <div className="border border-rule divide-y divide-rule">
               {campDonorsList?.donors?.map((d) => (
-                <div key={d.registration_id} className="p-3 flex items-center justify-between hover:bg-slate-50">
+                <div key={d.registration_id} className="p-2.5 flex items-center justify-between bg-surface">
                   <div>
-                    <span className="font-semibold text-slate-800">{d.donor_name}</span>
-                    <span className="text-slate-400 block text-[11px] font-mono">{d.phone}</span>
+                    <span className="font-medium text-ink">{d.donor_name}</span>
+                    <span className="text-muted block text-[10px] font-mono">{d.phone}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <BloodGroupPill bloodGroup={d.blood_group} />
-                    <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
-                      d.attended ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
-                    }`}>
+                    <BloodGroupStamp bloodGroup={d.blood_group} size="sm" />
+                    <span className="font-mono text-[10px] uppercase text-muted">
                       {d.attended ? 'Attended' : 'Registered'}
                     </span>
                   </div>
@@ -399,131 +384,102 @@ const DonationCamps = () => {
       </Modal>
 
       {/* Organize Camp Modal */}
-      <Modal isOpen={isCreateCampOpen} onClose={() => setIsCreateCampOpen(false)} title="Organize New Donation Camp">
-        <form onSubmit={handleCreateCamp} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Camp Name *</label>
-            <input
-              type="text"
+      <Modal
+        isOpen={isCreateCampOpen}
+        onClose={() => setIsCreateCampOpen(false)}
+        title="Organize New Donation Camp"
+        subtitle="Creates camp record with integrity checks (capacity > 0, end_date >= start_date)."
+      >
+        <form onSubmit={handleCreateCamp} className="space-y-4">
+          <Input
+            label="Camp Title"
+            required
+            placeholder="e.g. Red Cross University Youth Drive"
+            value={campForm.camp_name}
+            onChange={(e) => setCampForm({ ...campForm, camp_name: e.target.value })}
+          />
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Organizer Organization"
               required
-              value={campForm.camp_name}
-              onChange={(e) => setCampForm({ ...campForm, camp_name: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              placeholder="e.g. Red Cross University Youth Drive"
+              placeholder="e.g. Rotary Club / Red Cross"
+              value={campForm.organizer}
+              onChange={(e) => setCampForm({ ...campForm, organizer: e.target.value })}
+            />
+            <Select
+              label="Partnering Hospital"
+              required
+              value={campForm.hospital_id}
+              onChange={(e) => setCampForm({ ...campForm, hospital_id: parseInt(e.target.value, 10) })}
+              options={hospitals.map((h) => ({
+                value: h.hospital_id,
+                label: h.hospital_name,
+              }))}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Organizer Organization *</label>
-              <input
-                type="text"
-                required
-                value={campForm.organizer}
-                onChange={(e) => setCampForm({ ...campForm, organizer: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                placeholder="Rotary Club / Red Cross"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Partnering Hospital *</label>
-              <select
-                value={campForm.hospital_id}
-                onChange={(e) => setCampForm({ ...campForm, hospital_id: parseInt(e.target.value, 10) })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                {hospitals.map((h) => (
-                  <option key={h.hospital_id} value={h.hospital_id}>{h.hospital_name}</option>
-                ))}
-              </select>
-            </div>
+            <Input
+              label="Location Venue"
+              required
+              placeholder="Community Hall / Campus"
+              value={campForm.location}
+              onChange={(e) => setCampForm({ ...campForm, location: e.target.value })}
+            />
+            <Input
+              label="City"
+              required
+              value={campForm.city}
+              onChange={(e) => setCampForm({ ...campForm, city: e.target.value })}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Location Details *</label>
-              <input
-                type="text"
-                required
-                value={campForm.location}
-                onChange={(e) => setCampForm({ ...campForm, location: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-                placeholder="Community Hall / Campus"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">City *</label>
-              <input
-                type="text"
-                required
-                value={campForm.city}
-                onChange={(e) => setCampForm({ ...campForm, city: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
+            <Input
+              label="Start Date & Time"
+              type="datetime-local"
+              required
+              value={campForm.start_date}
+              onChange={(e) => setCampForm({ ...campForm, start_date: e.target.value })}
+            />
+            <Input
+              label="End Date & Time (CHECK >= Start)"
+              type="datetime-local"
+              required
+              value={campForm.end_date}
+              onChange={(e) => setCampForm({ ...campForm, end_date: e.target.value })}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Start Date & Time *</label>
-              <input
-                type="datetime-local"
-                required
-                value={campForm.start_date}
-                onChange={(e) => setCampForm({ ...campForm, start_date: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">End Date & Time (CHECK &ge; Start) *</label>
-              <input
-                type="datetime-local"
-                required
-                value={campForm.end_date}
-                onChange={(e) => setCampForm({ ...campForm, end_date: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
+            <Input
+              label="Target Capacity (CHECK > 0)"
+              type="number"
+              min="1"
+              required
+              value={campForm.capacity}
+              onChange={(e) => setCampForm({ ...campForm, capacity: parseInt(e.target.value, 10) })}
+            />
+            <Input
+              label="Helpline Phone"
+              required
+              value={campForm.contact_phone}
+              onChange={(e) => setCampForm({ ...campForm, contact_phone: e.target.value })}
+            />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Capacity (CHECK &gt; 0) *</label>
-              <input
-                type="number"
-                min="1"
-                required
-                value={campForm.capacity}
-                onChange={(e) => setCampForm({ ...campForm, capacity: parseInt(e.target.value, 10) })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Helpline Phone *</label>
-              <input
-                type="text"
-                required
-                value={campForm.contact_phone}
-                onChange={(e) => setCampForm({ ...campForm, contact_phone: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="pt-4 border-t flex justify-end gap-2">
-            <button
+          <div className="pt-3 border-t border-rule flex justify-end gap-2">
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => setIsCreateCampOpen(false)}
-              className="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50"
             >
               Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-brand-600 text-white font-bold rounded-lg hover:bg-brand-700 shadow-sm"
-            >
+            </Button>
+            <Button type="submit" variant="primary">
               Schedule Camp
-            </button>
+            </Button>
           </div>
         </form>
       </Modal>
@@ -532,4 +488,3 @@ const DonationCamps = () => {
 };
 
 export default DonationCamps;
-

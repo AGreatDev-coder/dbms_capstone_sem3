@@ -1,18 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import Modal from '../components/Modal';
-import { BloodGroupPill, StatusBadge } from '../components/Badge';
-import { Bed, UserPlus, Filter, Droplet, HeartPulse, Edit3, Trash2, Search, ArrowUpDown, ChevronLeft, ChevronRight, AlertCircle, RefreshCw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { PageHeader } from '../components/common/PageHeader';
+import { PageState } from '../components/common/PageState';
+import { Button } from '../components/common/Button';
+import { Input, Select, Textarea } from '../components/common/FormControls';
+import { StatusDot } from '../components/common/StatusDot';
+import { BloodGroupStamp } from '../components/common/BloodGroupStamp';
+import { Modal } from '../components/common/Modal';
+import { Drawer } from '../components/common/Drawer';
+import { ChevronLeft, ChevronRight, Search, Plus } from 'lucide-react';
 
 const PatientManagement = () => {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [patients, setPatients] = useState([]);
   const [hospitals, setHospitals] = useState([]);
   const [wards, setWards] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -24,16 +29,16 @@ const PatientManagement = () => {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize] = useState(25);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
-  // Modals
+  // Modals & Drawers
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState(null);
-  const [errorMessage, setErrorMessage] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
+  const [drawerPatient, setDrawerPatient] = useState(null);
+  const [feedback, setFeedback] = useState(null);
 
   // New Patient Form
   const [newPatient, setNewPatient] = useState({
@@ -49,7 +54,7 @@ const PatientManagement = () => {
     hospital_id: 1,
     ward_id: 1,
     medical_status: 'STABLE',
-    medical_notes: 'Admitted for medical monitoring.',
+    medical_notes: 'Inpatient admission record.',
   });
 
   // Update Status Form
@@ -63,7 +68,7 @@ const PatientManagement = () => {
 
   useEffect(() => {
     fetchPatients();
-  }, [hospitalFilter, statusFilter, bloodGroupFilter, sortBy, sortOrder, currentPage, pageSize]);
+  }, [hospitalFilter, statusFilter, bloodGroupFilter, sortBy, sortOrder, currentPage]);
 
   useEffect(() => {
     fetchHospitals();
@@ -72,13 +77,13 @@ const PatientManagement = () => {
   const fetchPatients = async () => {
     try {
       setLoading(true);
-      setErrorMessage('');
+      setError(null);
 
       if (user?.role === 'PATIENT') {
-        const patientId = user?.patient_id || 1;
+        const patientId = user?.patient_id || 20001;
         const res = await api.get(`/patients/${patientId}`);
-        if (res.data && res.data.success) {
-          setPatients([res.data.patient]);
+        if (res.data?.success) {
+          setPatients(res.data.patient ? [res.data.patient] : []);
           setTotalCount(1);
           setTotalPages(1);
         }
@@ -97,14 +102,14 @@ const PatientManagement = () => {
       if (searchTerm.trim()) params.search = searchTerm.trim();
 
       const res = await api.get('/patients', { params });
-      if (res.data && res.data.success) {
+      if (res.data?.success) {
         setPatients(res.data.patients || []);
         setTotalCount(res.data.count || 0);
         setTotalPages(res.data.totalPages || 1);
       }
     } catch (err) {
       console.error('Failed to load patients:', err);
-      setErrorMessage(err.response?.data?.message || 'Failed to load patients from database.');
+      setError(err.response?.data?.message || 'Failed to retrieve patient registry from MySQL.');
     } finally {
       setLoading(false);
     }
@@ -119,8 +124,8 @@ const PatientManagement = () => {
   const fetchHospitals = async () => {
     try {
       const res = await api.get('/hospitals');
-      if (res.data && res.data.success) {
-        setHospitals(res.data.hospitals);
+      if (res.data?.success) {
+        setHospitals(res.data.hospitals || []);
         if (res.data.hospitals.length > 0) {
           fetchWardsForHosp(res.data.hospitals[0].hospital_id);
         }
@@ -133,8 +138,8 @@ const PatientManagement = () => {
   const fetchWardsForHosp = async (hospId) => {
     try {
       const res = await api.get(`/hospitals/${hospId}/wards`);
-      if (res.data && res.data.success) {
-        setWards(res.data.wards);
+      if (res.data?.success) {
+        setWards(res.data.wards || []);
         if (res.data.wards.length > 0) {
           setNewPatient((prev) => ({ ...prev, ward_id: res.data.wards[0].ward_id }));
         }
@@ -148,13 +153,13 @@ const PatientManagement = () => {
     e.preventDefault();
     try {
       const res = await api.post('/patients', newPatient);
-      if (res.data && res.data.success) {
+      if (res.data?.success) {
         setIsRegisterModalOpen(false);
-        setSuccessMessage(res.data.message);
+        setFeedback({ type: 'success', message: res.data.message });
         fetchPatients();
       }
     } catch (err) {
-      setErrorMessage(err.response?.data?.message || 'Failed to register patient');
+      setFeedback({ type: 'error', message: err.response?.data?.message || 'Registration failed.' });
     }
   };
 
@@ -176,113 +181,124 @@ const PatientManagement = () => {
     if (!selectedPatient) return;
     try {
       const res = await api.put(`/patients/${selectedPatient.patient_id}`, statusUpdate);
-      if (res.data && res.data.success) {
+      if (res.data?.success) {
         setIsUpdateModalOpen(false);
-        setSuccessMessage(res.data.message);
+        setFeedback({ type: 'success', message: res.data.message });
         fetchPatients();
+        if (drawerPatient?.patient_id === selectedPatient.patient_id) {
+          setDrawerPatient({ ...drawerPatient, ...statusUpdate });
+        }
       }
     } catch (err) {
-      setErrorMessage(err.response?.data?.message || 'Failed to update patient status');
+      setFeedback({ type: 'error', message: err.response?.data?.message || 'Update failed.' });
     }
   };
 
   const handleDeletePatient = async (patientId, patientName) => {
-    if (!window.confirm(`Are you sure you want to delete patient #${patientId} (${patientName})?`)) {
+    if (!window.confirm(`Discharge and archive patient record #${patientId} (${patientName})?`)) {
       return;
     }
 
     try {
       const res = await api.delete(`/patients/${patientId}`);
-      if (res.data && res.data.success) {
-        setSuccessMessage(res.data.message);
+      if (res.data?.success) {
+        setFeedback({ type: 'success', message: res.data.message });
+        if (drawerPatient?.patient_id === patientId) setDrawerPatient(null);
         fetchPatients();
       }
     } catch (err) {
-      setErrorMessage(err.response?.data?.message || `Failed to delete patient #${patientId}.`);
+      setFeedback({ type: 'error', message: err.response?.data?.message || `Failed to archive #${patientId}` });
     }
   };
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-4 border-b border-slate-200">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Patient Management</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Clinical inpatient registry connected directly to MySQL 8.0, managing person specialization, ward bed triggers, and transfusion requests.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => fetchPatients()}
-            className="p-2 border rounded-lg hover:bg-slate-50 text-slate-600 transition-colors"
-            title="Refresh from MySQL"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-          {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
-            <button
+      <PageHeader
+        breadcrumb="Clinical Subtype Registry"
+        title="Inpatient Registry (400 Dataset)"
+        description="Patient specialization records mapped from Person supertype, managing ward occupancy triggers, assigned clinicians, and emergency contacts."
+        badge={`${totalCount} Total Inpatients`}
+        action={
+          (user?.role === 'ADMIN' || user?.role === 'STAFF') && (
+            <Button
+              variant="primary"
+              size="md"
               onClick={() => setIsRegisterModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg bg-brand-600 text-white hover:bg-brand-700 shadow-sm transition-colors"
             >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>Admit New Patient</span>
-            </button>
-          )}
-        </div>
-      </div>
+              <Plus className="w-3.5 h-3.5 mr-1" />
+              <span>Admit Patient</span>
+            </Button>
+          )
+        }
+      />
 
-      {/* Alerts */}
-      {successMessage && (
-        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center justify-between">
-          <span>{successMessage}</span>
-          <button onClick={() => setSuccessMessage('')} className="font-bold text-emerald-900 ml-2">&times;</button>
+      {feedback && (
+        <div
+          className={`p-3 border rounded-[2px] text-xs font-mono flex items-center justify-between ${
+            feedback.type === 'success'
+              ? 'border-moss/40 bg-moss/10 text-moss'
+              : 'border-blood/40 bg-blood-soft/20 text-blood'
+          }`}
+        >
+          <span>{feedback.message}</span>
+          <button
+            onClick={() => setFeedback(null)}
+            className="text-xs hover:opacity-75 ml-2 font-bold"
+          >
+            &times;
+          </button>
         </div>
       )}
-      {errorMessage && (
-        <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{errorMessage}</span>
-          </div>
-          <button onClick={() => setErrorMessage('')} className="font-bold text-rose-900 ml-2">&times;</button>
-        </div>
-      )}
 
-      {/* Search & Filters Toolbar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-3 text-xs">
-        <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center gap-2">
+      {/* Search & Filter Toolbar */}
+      <div className="p-3 bg-surface border border-rule rounded-[2px] flex flex-col md:flex-row gap-3 text-xs items-center justify-between">
+        <form onSubmit={handleSearchSubmit} className="flex-1 flex items-center gap-2 w-full md:w-auto">
           <div className="relative flex-1">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+            <Search className="w-3.5 h-3.5 text-muted absolute left-2.5 top-2" />
             <input
               type="text"
-              placeholder="Search by patient name, phone, city, notes..."
+              placeholder="Search by name, phone, city, notes..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 border rounded-lg bg-slate-50 text-slate-800 font-medium focus:ring-2 focus:ring-brand-500 focus:outline-none"
+              className="w-full pl-8 pr-3 py-1.5 bg-paper border border-rule text-ink text-xs rounded-[2px] focus:outline-none focus:border-ink font-mono"
             />
           </div>
-          <button
-            type="submit"
-            className="px-3.5 py-2 rounded-lg bg-slate-900 text-white font-bold hover:bg-slate-800 transition-colors"
-          >
+          <Button type="submit" variant="secondary" size="sm">
             Search
-          </button>
+          </Button>
         </form>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
           <select
             value={hospitalFilter}
             onChange={(e) => {
               setHospitalFilter(e.target.value);
               setCurrentPage(1);
             }}
-            className="px-3 py-2 border rounded-lg bg-slate-50 text-slate-700 font-medium focus:outline-none"
+            className="px-2 py-1.5 bg-paper border border-rule text-xs text-ink rounded-[2px] focus:outline-none"
           >
             <option value="">All Hospitals</option>
             {hospitals.map((h) => (
-              <option key={h.hospital_id} value={h.hospital_id}>{h.hospital_name}</option>
+              <option key={h.hospital_id} value={h.hospital_id}>
+                {h.hospital_name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={bloodGroupFilter}
+            onChange={(e) => {
+              setBloodGroupFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="px-2 py-1.5 bg-paper border border-rule text-xs text-ink rounded-[2px] focus:outline-none"
+          >
+            <option value="">All Phenotypes</option>
+            {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
+              <option key={bg} value={bg}>
+                {bg}
+              </option>
             ))}
           </select>
 
@@ -292,7 +308,7 @@ const PatientManagement = () => {
               setStatusFilter(e.target.value);
               setCurrentPage(1);
             }}
-            className="px-3 py-2 border rounded-lg bg-slate-50 text-slate-700 font-medium focus:outline-none"
+            className="px-2 py-1.5 bg-paper border border-rule text-xs text-ink rounded-[2px] focus:outline-none"
           >
             <option value="">All Statuses</option>
             <option value="CRITICAL">Critical</option>
@@ -300,418 +316,369 @@ const PatientManagement = () => {
             <option value="RECOVERING">Recovering</option>
             <option value="DISCHARGED">Discharged</option>
           </select>
-
-          <select
-            value={bloodGroupFilter}
-            onChange={(e) => {
-              setBloodGroupFilter(e.target.value);
-              setCurrentPage(1);
-            }}
-            className="px-3 py-2 border rounded-lg bg-slate-50 text-slate-700 font-medium focus:outline-none font-bold"
-          >
-            <option value="">All Blood Groups</option>
-            {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
-              <option key={bg} value={bg}>{bg}</option>
-            ))}
-          </select>
-
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="px-3 py-2 border rounded-lg bg-slate-50 text-slate-700 font-medium focus:outline-none"
-          >
-            <option value="admission_date">Sort: Admission Date</option>
-            <option value="name">Sort: Patient Name</option>
-            <option value="medical_status">Sort: Medical Status</option>
-            <option value="hospital_name">Sort: Hospital</option>
-          </select>
-
-          <button
-            onClick={() => setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC')}
-            title="Toggle sort direction"
-            className="p-2 border rounded-lg hover:bg-slate-50 text-slate-700 font-bold"
-          >
-            {sortOrder}
-          </button>
         </div>
       </div>
 
-      {/* Patients Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs font-semibold text-slate-600">
-          <span>
-            Showing <strong className="text-slate-900">{patients.length}</strong> of{' '}
-            <strong className="text-slate-900">{totalCount}</strong> database records
-          </span>
-          <div className="flex items-center gap-2">
-            <span>Per page:</span>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(parseInt(e.target.value, 10));
-                setCurrentPage(1);
-              }}
-              className="border rounded px-2 py-1 bg-white font-medium"
-            >
-              <option value="15">15</option>
-              <option value="25">25</option>
-              <option value="50">50</option>
-              <option value="100">100</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
+      <PageState
+        loading={loading}
+        error={error}
+        empty={patients.length === 0}
+        emptyTitle="No patient records found"
+        emptyDescription="No inpatients matched the active search and filter criteria."
+        onRetry={fetchPatients}
+      >
+        {/* Dense Clinical Records Table (40px rows, sticky header) */}
+        <div className="border border-rule rounded-[2px] bg-surface overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="bg-slate-100/70 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-semibold">
-                <th className="py-3 px-4">Patient ID</th>
-                <th className="py-3 px-4">Patient Name</th>
-                <th className="py-3 px-4">Blood Group</th>
-                <th className="py-3 px-4">Admitted Hospital</th>
-                <th className="py-3 px-4">Ward Location</th>
-                <th className="py-3 px-4">Admission Date</th>
-                <th className="py-3 px-4">Medical Status</th>
-                <th className="py-3 px-4">Transfusion Requests</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+              <tr className="bg-paper border-b border-rule font-mono text-[11px] uppercase tracking-wider text-muted sticky top-0">
+                <th className="py-2.5 px-3">Patient ID</th>
+                <th className="py-2.5 px-3">Patient Legal Name</th>
+                <th className="py-2.5 px-3">Phenotype</th>
+                <th className="py-2.5 px-3">Facility</th>
+                <th className="py-2.5 px-3">Ward Assigned</th>
+                <th className="py-2.5 px-3">Admission Date</th>
+                <th className="py-2.5 px-3">Status</th>
+                <th className="py-2.5 px-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading ? (
-                <tr>
-                  <td colSpan="9" className="py-12 text-center text-slate-500">
-                    <div className="inline-block w-6 h-6 border-2 border-brand-600 border-t-transparent rounded-full animate-spin mb-2"></div>
-                    <p>Executing MySQL query...</p>
+            <tbody className="divide-y divide-rule font-mono tabular-nums">
+              {patients.map((pt) => (
+                <tr
+                  key={pt.patient_id}
+                  onClick={() => setDrawerPatient(pt)}
+                  className="hover:bg-paper transition-colors cursor-pointer group"
+                >
+                  <td className="py-2 px-3 font-semibold text-ink">
+                    #{pt.patient_id}
+                  </td>
+                  <td className="py-2 px-3 font-sans font-medium text-ink">
+                    <span className="group-hover:text-blood transition-colors">
+                      {pt.first_name} {pt.last_name}
+                    </span>
+                    <span className="block font-mono text-[10px] text-muted">
+                      DOB: {pt.date_of_birth} &bull; {pt.gender}
+                    </span>
+                  </td>
+                  <td className="py-2 px-3">
+                    <BloodGroupStamp bloodGroup={pt.blood_group} size="sm" />
+                  </td>
+                  <td className="py-2 px-3 font-sans text-muted text-[11px]">
+                    {pt.hospital_name}
+                  </td>
+                  <td className="py-2 px-3 font-sans text-muted text-[11px]">
+                    {pt.ward_name ? (
+                      <span>{pt.ward_name} ({pt.ward_type})</span>
+                    ) : (
+                      <span className="text-muted/60">—</span>
+                    )}
+                  </td>
+                  <td className="py-2 px-3 text-muted text-[11px]">
+                    {pt.admission_date ? String(pt.admission_date).slice(0, 10) : '—'}
+                  </td>
+                  <td className="py-2 px-3">
+                    <StatusDot status={pt.medical_status} />
+                  </td>
+                  <td className="py-2 px-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleOpenUpdate(pt)}
+                          className="text-xs text-muted hover:text-ink underline underline-offset-2"
+                        >
+                          Update
+                        </button>
+                        <button
+                          onClick={() => handleDeletePatient(pt.patient_id, `${pt.first_name} ${pt.last_name}`)}
+                          className="text-xs text-blood hover:text-blood-hover underline underline-offset-2"
+                        >
+                          Archive
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
-              ) : patients.length === 0 ? (
-                <tr>
-                  <td colSpan="9" className="py-12 text-center text-slate-400">
-                    No patient records matched the database query filter.
-                  </td>
-                </tr>
-              ) : (
-                patients.map((pt) => (
-                  <tr key={pt.patient_id} className="hover:bg-slate-50/50">
-                    <td className="py-3 px-4 font-mono font-bold text-slate-900">#{pt.patient_id}</td>
-                    <td className="py-3 px-4 font-semibold text-slate-800">
-                      {pt.name}
-                      <span className="block text-[11px] text-slate-400 font-normal">
-                        DOB: {pt.date_of_birth} ({pt.gender}) &bull; {pt.city || 'Delhi'}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <BloodGroupPill bloodGroup={pt.blood_group} />
-                    </td>
-                    <td className="py-3 px-4 font-medium text-slate-700">{pt.hospital_name}</td>
-                    <td className="py-3 px-4 text-slate-600">
-                      {pt.ward_name} {pt.ward_type ? `(${pt.ward_type})` : ''}
-                    </td>
-                    <td className="py-3 px-4 text-slate-600 font-mono text-[11px]">{pt.admission_date}</td>
-                    <td className="py-3 px-4">
-                      <StatusBadge status={pt.medical_status} />
-                    </td>
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-1.5">
-                        {pt.active_blood_requests > 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                            <Droplet className="w-3 h-3" />
-                            <span>{pt.active_blood_requests} Active</span>
-                          </span>
-                        )}
-                        {pt.active_organ_requests > 0 && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                            <HeartPulse className="w-3 h-3" />
-                            <span>{pt.active_organ_requests} Organ</span>
-                          </span>
-                        )}
-                        {pt.active_blood_requests === 0 && pt.active_organ_requests === 0 && (
-                          <span className="text-slate-400 text-[11px]">None</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
-                          <button
-                            onClick={() => handleOpenUpdate(pt)}
-                            title="Update Status / Ward"
-                            className="p-1.5 rounded text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-                          >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        {user?.role === 'ADMIN' && (
-                          <button
-                            onClick={() => handleDeletePatient(pt.patient_id, pt.name)}
-                            title="Delete Patient (Integrity Protected)"
-                            className="p-1.5 rounded text-rose-500 hover:text-rose-800 hover:bg-rose-50"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>
 
-        {/* Pagination Controls */}
-        <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-          <div className="text-slate-500">
-            Page <strong className="text-slate-900">{currentPage}</strong> of{' '}
-            <strong className="text-slate-900">{totalPages}</strong> ({totalCount} total patients in MySQL)
-          </div>
-
-          <div className="flex items-center gap-1.5">
+        {/* Pagination Bar */}
+        <div className="flex items-center justify-between text-xs font-mono text-muted pt-2 border-t border-rule">
+          <span>
+            Page {currentPage} of {totalPages} &bull; Showing {(currentPage - 1) * pageSize + 1}–
+            {Math.min(currentPage * pageSize, totalCount)} of {totalCount} records
+          </span>
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage <= 1 || loading}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border bg-white font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+              disabled={currentPage <= 1}
+              className="p-1 border border-rule bg-surface text-ink hover:bg-paper disabled:opacity-30 rounded-[2px]"
+              aria-label="Previous page"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Previous</span>
+              <ChevronLeft className="w-4 h-4" />
             </button>
-
-            <span className="px-2 font-mono text-slate-600 font-bold">{currentPage}</span>
-
+            <span className="px-2 py-1 text-ink font-semibold">{currentPage}</span>
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage >= totalPages || loading}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border bg-white font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none transition-colors"
+              disabled={currentPage >= totalPages}
+              className="p-1 border border-rule bg-surface text-ink hover:bg-paper disabled:opacity-30 rounded-[2px]"
+              aria-label="Next page"
             >
-              <span>Next</span>
-              <ChevronRight className="w-3.5 h-3.5" />
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
-      </div>
+      </PageState>
 
-      {/* Admit Patient Modal */}
-      <Modal isOpen={isRegisterModalOpen} onClose={() => setIsRegisterModalOpen(false)} title="Admit Patient (Person & Patient Specialization)">
-        <form onSubmit={handleRegisterPatient} className="space-y-4 text-xs">
+      {/* Patient Detail Drawer */}
+      <Drawer
+        isOpen={Boolean(drawerPatient)}
+        onClose={() => setDrawerPatient(null)}
+        title={drawerPatient ? `${drawerPatient.first_name} ${drawerPatient.last_name}` : ''}
+        subtitle={drawerPatient ? `Inpatient Record #${drawerPatient.patient_id} / Person #${drawerPatient.person_id}` : ''}
+      >
+        {drawerPatient && (
+          <div className="space-y-4 text-xs">
+            <div className="flex items-center justify-between pb-3 border-b border-rule">
+              <div>
+                <p className="text-muted font-mono text-[11px] uppercase">ABO/Rh Phenotype</p>
+                <div className="mt-1">
+                  <BloodGroupStamp bloodGroup={drawerPatient.blood_group} size="lg" />
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-muted font-mono text-[11px] uppercase">Current Triage</p>
+                <div className="mt-1">
+                  <StatusDot status={drawerPatient.medical_status} />
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="font-mono text-[11px] uppercase tracking-wider text-muted">
+                Hospital Assignment
+              </p>
+              <div className="p-3 bg-paper border border-rule rounded-[2px] space-y-1">
+                <p className="font-medium text-ink">{drawerPatient.hospital_name}</p>
+                <p className="text-muted">
+                  Ward: {drawerPatient.ward_name || 'Unassigned'} ({drawerPatient.ward_type || 'N/A'})
+                </p>
+                <p className="text-muted">
+                  Attending Doctor: {drawerPatient.attending_doctor_name || 'Assigned Resident'}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="font-mono text-[11px] uppercase tracking-wider text-muted">
+                Contact & Emergency
+              </p>
+              <div className="p-3 bg-paper border border-rule rounded-[2px] space-y-1.5 font-mono">
+                <div>
+                  <span className="text-muted">Phone: </span>
+                  <span className="text-ink">{drawerPatient.phone || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-muted">Email: </span>
+                  <span className="text-ink">{drawerPatient.email || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-muted">Location: </span>
+                  <span className="text-ink">{drawerPatient.address}, {drawerPatient.city} ({drawerPatient.pincode})</span>
+                </div>
+                <div>
+                  <span className="text-muted">Emergency Contact: </span>
+                  <span className="text-ink">{drawerPatient.emergency_contact_name || '—'} ({drawerPatient.emergency_contact_phone || '—'})</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="font-mono text-[11px] uppercase tracking-wider text-muted">
+                Clinical Diagnosis Notes
+              </p>
+              <div className="p-3 bg-paper border border-rule rounded-[2px] font-mono text-[11px] text-ink leading-relaxed">
+                {drawerPatient.medical_notes || 'No specific diagnostic notes recorded.'}
+              </div>
+            </div>
+
+            {(user?.role === 'ADMIN' || user?.role === 'STAFF') && (
+              <div className="pt-4 border-t border-rule flex items-center justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    handleOpenUpdate(drawerPatient);
+                  }}
+                >
+                  Edit Patient Status
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </Drawer>
+
+      {/* Patient Admission Modal */}
+      <Modal
+        isOpen={isRegisterModalOpen}
+        onClose={() => setIsRegisterModalOpen(false)}
+        title="Admit New Inpatient"
+        subtitle="Generates Person supertype entry and Patient subtype record in MySQL lifelink_db"
+      >
+        <form onSubmit={handleRegisterPatient} className="space-y-3.5">
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">First Name *</label>
-              <input
-                type="text"
-                required
-                value={newPatient.first_name}
-                onChange={(e) => setNewPatient({ ...newPatient, first_name: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Last Name *</label>
-              <input
-                type="text"
-                required
-                value={newPatient.last_name}
-                onChange={(e) => setNewPatient({ ...newPatient, last_name: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Blood Group *</label>
-              <select
-                value={newPatient.blood_group}
-                onChange={(e) => setNewPatient({ ...newPatient, blood_group: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none font-bold"
-              >
-                {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
-                  <option key={bg} value={bg}>{bg}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Gender *</label>
-              <select
-                value={newPatient.gender}
-                onChange={(e) => setNewPatient({ ...newPatient, gender: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                <option value="MALE">Male</option>
-                <option value="FEMALE">Female</option>
-                <option value="OTHER">Other</option>
-              </select>
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Date of Birth</label>
-              <input
-                type="date"
-                value={newPatient.date_of_birth}
-                onChange={(e) => setNewPatient({ ...newPatient, date_of_birth: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Phone *</label>
-              <input
-                type="text"
-                required
-                value={newPatient.phone}
-                onChange={(e) => setNewPatient({ ...newPatient, phone: e.target.value })}
-                placeholder="+91-9811002233"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">City</label>
-              <input
-                type="text"
-                value={newPatient.city}
-                onChange={(e) => setNewPatient({ ...newPatient, city: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Hospital *</label>
-              <select
-                value={newPatient.hospital_id}
-                onChange={(e) => {
-                  const hospId = parseInt(e.target.value, 10);
-                  setNewPatient({ ...newPatient, hospital_id: hospId });
-                  fetchWardsForHosp(hospId);
-                }}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                {hospitals.map((h) => (
-                  <option key={h.hospital_id} value={h.hospital_id}>{h.hospital_name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Ward Location</label>
-              <select
-                value={newPatient.ward_id}
-                onChange={(e) => setNewPatient({ ...newPatient, ward_id: parseInt(e.target.value, 10) })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-              >
-                {wards.map((w) => (
-                  <option key={w.ward_id} value={w.ward_id}>{w.ward_name} ({w.ward_type})</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Medical Status *</label>
-            <select
-              value={newPatient.medical_status}
-              onChange={(e) => setNewPatient({ ...newPatient, medical_status: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-            >
-              <option value="CRITICAL">Critical</option>
-              <option value="STABLE">Stable</option>
-              <option value="RECOVERING">Recovering</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Clinical Notes</label>
-            <textarea
-              rows="2"
-              value={newPatient.medical_notes}
-              onChange={(e) => setNewPatient({ ...newPatient, medical_notes: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
+            <Input
+              label="First Name"
+              required
+              value={newPatient.first_name}
+              onChange={(e) => setNewPatient({ ...newPatient, first_name: e.target.value })}
+            />
+            <Input
+              label="Last Name"
+              required
+              value={newPatient.last_name}
+              onChange={(e) => setNewPatient({ ...newPatient, last_name: e.target.value })}
             />
           </div>
 
-          <div className="pt-2 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setIsRegisterModalOpen(false)}
-              className="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50 font-bold"
+          <div className="grid grid-cols-3 gap-3">
+            <Input
+              label="Date of Birth"
+              type="date"
+              required
+              value={newPatient.date_of_birth}
+              onChange={(e) => setNewPatient({ ...newPatient, date_of_birth: e.target.value })}
+            />
+            <Select
+              label="Gender"
+              value={newPatient.gender}
+              onChange={(e) => setNewPatient({ ...newPatient, gender: e.target.value })}
             >
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+              <option value="OTHER">Other</option>
+            </Select>
+            <Select
+              label="Phenotype"
+              value={newPatient.blood_group}
+              onChange={(e) => setNewPatient({ ...newPatient, blood_group: e.target.value })}
+            >
+              {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map((bg) => (
+                <option key={bg} value={bg}>{bg}</option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Input
+              label="Phone Number"
+              required
+              value={newPatient.phone}
+              onChange={(e) => setNewPatient({ ...newPatient, phone: e.target.value })}
+            />
+            <Input
+              label="Email Address"
+              type="email"
+              required
+              value={newPatient.email}
+              onChange={(e) => setNewPatient({ ...newPatient, email: e.target.value })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Select
+              label="Admitting Hospital"
+              value={newPatient.hospital_id}
+              onChange={(e) => {
+                const hid = parseInt(e.target.value, 10);
+                setNewPatient({ ...newPatient, hospital_id: hid });
+                fetchWardsForHosp(hid);
+              }}
+            >
+              {hospitals.map((h) => (
+                <option key={h.hospital_id} value={h.hospital_id}>{h.hospital_name}</option>
+              ))}
+            </Select>
+
+            <Select
+              label="Ward Assignment"
+              value={newPatient.ward_id}
+              onChange={(e) => setNewPatient({ ...newPatient, ward_id: parseInt(e.target.value, 10) })}
+            >
+              {wards.map((w) => (
+                <option key={w.ward_id} value={w.ward_id}>
+                  {w.ward_name} ({w.occupied_beds}/{w.total_beds})
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <Textarea
+            label="Clinical Admitting Notes"
+            rows={2}
+            value={newPatient.medical_notes}
+            onChange={(e) => setNewPatient({ ...newPatient, medical_notes: e.target.value })}
+          />
+
+          <div className="pt-2 border-t border-rule flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setIsRegisterModalOpen(false)}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-lg bg-brand-600 text-white font-bold hover:bg-brand-700"
-            >
-              Execute Admission
-            </button>
+            </Button>
+            <Button type="submit" variant="primary">
+              Record Admission
+            </Button>
           </div>
         </form>
       </Modal>
 
-      {/* Update Patient Modal */}
-      <Modal isOpen={isUpdateModalOpen} onClose={() => setIsUpdateModalOpen(false)} title={`Update Patient #${selectedPatient?.patient_id}`}>
-        <form onSubmit={handleUpdateStatus} className="space-y-4 text-xs">
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Medical Status *</label>
-            <select
-              value={statusUpdate.medical_status}
-              onChange={(e) => setStatusUpdate({ ...statusUpdate, medical_status: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-            >
-              <option value="CRITICAL">Critical</option>
-              <option value="STABLE">Stable</option>
-              <option value="RECOVERING">Recovering</option>
-              <option value="DISCHARGED">Discharged (Trigger bed release)</option>
-            </select>
-          </div>
+      {/* Patient Update Modal */}
+      <Modal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+        title="Update Inpatient Record"
+        subtitle={selectedPatient ? `Patient #${selectedPatient.patient_id} &bull; ${selectedPatient.first_name} ${selectedPatient.last_name}` : ''}
+      >
+        <form onSubmit={handleUpdateStatus} className="space-y-3.5">
+          <Select
+            label="Medical Triage Status"
+            value={statusUpdate.medical_status}
+            onChange={(e) => setStatusUpdate({ ...statusUpdate, medical_status: e.target.value })}
+          >
+            <option value="CRITICAL">Critical (Intensive Monitoring)</option>
+            <option value="STABLE">Stable</option>
+            <option value="RECOVERING">Recovering</option>
+            <option value="DISCHARGED">Discharged (Releases Ward Bed)</option>
+          </Select>
 
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Ward Location</label>
-            <select
-              value={statusUpdate.ward_id}
-              onChange={(e) => setStatusUpdate({ ...statusUpdate, ward_id: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-            >
-              <option value="">Unassigned</option>
-              {wards.map((w) => (
-                <option key={w.ward_id} value={w.ward_id}>{w.ward_name} ({w.ward_type})</option>
-              ))}
-            </select>
-          </div>
+          <Select
+            label="Ward Transfer"
+            value={statusUpdate.ward_id}
+            onChange={(e) => setStatusUpdate({ ...statusUpdate, ward_id: e.target.value })}
+          >
+            <option value="">No Ward Transfer</option>
+            {wards.map((w) => (
+              <option key={w.ward_id} value={w.ward_id}>
+                {w.ward_name} (Floor {w.floor_number}) &bull; {w.occupied_beds}/{w.total_beds} beds
+              </option>
+            ))}
+          </Select>
 
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Phone</label>
-            <input
-              type="text"
-              value={statusUpdate.phone}
-              onChange={(e) => setStatusUpdate({ ...statusUpdate, phone: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-            />
-          </div>
+          <Textarea
+            label="Clinical Status Update Notes"
+            rows={3}
+            value={statusUpdate.medical_notes}
+            onChange={(e) => setStatusUpdate({ ...statusUpdate, medical_notes: e.target.value })}
+          />
 
-          <div>
-            <label className="block font-semibold text-slate-700 mb-1">Clinical Notes</label>
-            <textarea
-              rows="3"
-              value={statusUpdate.medical_notes}
-              onChange={(e) => setStatusUpdate({ ...statusUpdate, medical_notes: e.target.value })}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-brand-500 focus:outline-none"
-            />
-          </div>
-
-          <div className="pt-2 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setIsUpdateModalOpen(false)}
-              className="px-4 py-2 border rounded-lg text-slate-600 hover:bg-slate-50 font-bold"
-            >
+          <div className="pt-2 border-t border-rule flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setIsUpdateModalOpen(false)}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-lg bg-brand-600 text-white font-bold hover:bg-brand-700"
-            >
-              Update Record
-            </button>
+            </Button>
+            <Button type="submit" variant="primary">
+              Save Clinical Update
+            </Button>
           </div>
         </form>
       </Modal>

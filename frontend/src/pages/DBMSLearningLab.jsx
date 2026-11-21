@@ -141,7 +141,7 @@ const DBMSLearningLab = () => {
     try {
       setPlaygroundLoading(true);
       setPlaygroundResult(null);
-      const res = await api.post('/sql-lab/run', { sql: sqlToRun });
+      const res = await api.post('/sql-lab/execute', { sql: sqlToRun });
       setPlaygroundResult(res.data);
     } catch (e) {
       setPlaygroundResult({ success: false, message: e.response?.data?.message || e.message });
@@ -203,7 +203,7 @@ const DBMSLearningLab = () => {
     const sql = catalog[cat] || catalog.cte;
     try {
       setAdvancedLoading(true);
-      const res = await api.post('/sql-lab/run', { sql });
+      const res = await api.post('/sql-lab/execute', { sql });
       setAdvancedResult({ cat, sql, ...res.data });
     } catch (e) {
       setAdvancedResult({ cat, sql, success: false, message: e.response?.data?.message || e.message });
