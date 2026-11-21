@@ -1,6 +1,7 @@
 /**
  * LIFE-LINK Blood Bank & Organ Donor Network Management System
  * Central Express.js Server
+ * Version 1.0.4 - Live modules: Hospitals, Donors, Patients, Blood Bank, Camps
  */
 
 const express = require('express');
