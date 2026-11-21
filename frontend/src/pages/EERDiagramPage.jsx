@@ -48,7 +48,7 @@ const EERDiagramPage = () => {
                 onError={(e) => {
                   if (!e.target.dataset.triedFallback) {
                     e.target.dataset.triedFallback = 'true';
-                    e.target.src = 'http://localhost:5000/database-artifacts/eer_diagram.png';
+                    e.target.src = '/database-artifacts/eer_diagram.png';
                   }
                 }}
               />

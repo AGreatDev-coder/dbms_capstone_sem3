@@ -42,6 +42,7 @@ async function initDB() {
       database: process.env.DB_NAME || 'lifelink_db',
       waitForConnections: true,
       connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || '10', 10),
+      connectTimeout: 2000,
       queueLimit: 0,
       multipleStatements: true,
       dateStrings: true,

@@ -58,6 +58,19 @@ app.use('/api/camps', campRoutes);
 app.use('/api/sql-lab', sqlLabRoutes);
 app.use('/api/dbms-lab', dbmsLabRoutes);
 
+// Direct alias routes for serverless gateways without /api prefix
+app.use('/auth', authRoutes);
+app.use('/dashboard', dashboardRoutes);
+app.use('/hospitals', hospitalRoutes);
+app.use('/donors', donorRoutes);
+app.use('/patients', patientRoutes);
+app.use('/blood-bank', bloodBankRoutes);
+app.use('/blood-requests', bloodRequestRoutes);
+app.use('/organ', organRoutes);
+app.use('/camps', campRoutes);
+app.use('/sql-lab', sqlLabRoutes);
+app.use('/dbms-lab', dbmsLabRoutes);
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
