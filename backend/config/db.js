@@ -452,7 +452,14 @@ function executeInMemoryQuery(sql, params = []) {
   // 6. JOIN Operations (Query 6)
   if (cleanSql.includes('supervisor_staff_id') || cleanSql.includes('SELF JOIN') || cleanSql.includes('employee_staff_id')) {
     // 6D Self Join
-    return dbStore.staff.map((sub) => {
+    let staffList = dbStore.staff;
+    if (params && params.length > 0 && params[0] !== undefined) {
+      const targetHospId = parseInt(params[0], 10);
+      if (!isNaN(targetHospId)) {
+        staffList = staffList.filter((s) => s.hospital_id === targetHospId);
+      }
+    }
+    return staffList.map((sub) => {
       const subPerson = dbStore.persons.find((p) => p.person_id === sub.person_id);
       const hosp = dbStore.hospitals.find((h) => h.hospital_id === sub.hospital_id);
       const sup = sub.supervisor_staff_id ? dbStore.staff.find((s) => s.staff_id === sub.supervisor_staff_id) : null;

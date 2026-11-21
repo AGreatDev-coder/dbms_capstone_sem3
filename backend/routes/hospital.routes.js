@@ -48,26 +48,54 @@ router.get('/', async (req, res) => {
         h.emergency_helpline,
         h.established_year,
         h.is_active,
-        COUNT(DISTINCT w.ward_id) AS ward_count,
-        COUNT(DISTINCT s.staff_id) AS staff_count,
-        COALESCE(SUM(w.total_beds), 0) AS total_capacity,
-        COALESCE(SUM(w.occupied_beds), 0) AS total_occupied
+        COALESCE(w_agg.ward_count, 0) AS ward_count,
+        COALESCE(s_agg.staff_count, 0) AS staff_count,
+        COALESCE(w_agg.total_beds, 0) AS total_beds,
+        COALESCE(w_agg.total_beds, 0) AS total_capacity,
+        COALESCE(w_agg.occupied_beds, 0) AS occupied_beds,
+        COALESCE(w_agg.occupied_beds, 0) AS total_occupied,
+        ROUND(
+          (COALESCE(w_agg.occupied_beds, 0) / NULLIF(COALESCE(w_agg.total_beds, 0), 0)) * 100, 
+          1
+        ) AS occupancy_rate
       FROM Hospital h
-      LEFT JOIN Ward w ON h.hospital_id = w.hospital_id
-      LEFT JOIN Staff s ON h.hospital_id = s.hospital_id
-      GROUP BY h.hospital_id
+      LEFT JOIN (
+        SELECT 
+          hospital_id,
+          COUNT(ward_id) AS ward_count,
+          SUM(total_beds) AS total_beds,
+          SUM(occupied_beds) AS occupied_beds
+        FROM Ward
+        GROUP BY hospital_id
+      ) w_agg ON h.hospital_id = w_agg.hospital_id
+      LEFT JOIN (
+        SELECT 
+          hospital_id,
+          COUNT(staff_id) AS staff_count
+        FROM Staff
+        WHERE is_active = TRUE
+        GROUP BY hospital_id
+      ) s_agg ON h.hospital_id = s_agg.hospital_id
       ORDER BY h.hospital_id ASC
     `;
     const hospitals = await db.query(sql);
 
     // Format numbers as actual numbers
-    const formatted = hospitals.map((h) => ({
-      ...h,
-      ward_count: Number(h.ward_count) || 0,
-      staff_count: Number(h.staff_count) || 0,
-      total_capacity: Number(h.total_capacity) || 0,
-      total_occupied: Number(h.total_occupied) || 0,
-    }));
+    const formatted = hospitals.map((h) => {
+      const totalBeds = Number(h.total_beds ?? h.total_capacity) || 0;
+      const occupiedBeds = Number(h.occupied_beds ?? h.total_occupied) || 0;
+      const rate = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0;
+      return {
+        ...h,
+        ward_count: Number(h.ward_count) || 0,
+        staff_count: Number(h.staff_count) || 0,
+        total_beds: totalBeds,
+        total_capacity: totalBeds,
+        occupied_beds: occupiedBeds,
+        total_occupied: occupiedBeds,
+        occupancy_rate: Number(h.occupancy_rate) || rate,
+      };
+    });
 
     res.json({
       success: true,
@@ -139,8 +167,8 @@ const getStaffHierarchyHandler = async (req, res) => {
   }
 };
 
-router.get('/staff-hierarchy', getStaffHierarchyHandler);
-router.get('/:id/staff-hierarchy', getStaffHierarchyHandler);
+router.get('/staff-hierarchy', authenticateToken, authorizeRoles('ADMIN'), getStaffHierarchyHandler);
+router.get('/:id/staff-hierarchy', authenticateToken, authorizeRoles('ADMIN'), getStaffHierarchyHandler);
 
 // Get single hospital with wards and staff count
 router.get('/:id', async (req, res) => {
@@ -237,14 +265,15 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN'), async (req, res) =>
       established_year,
     } = req.body;
 
-    const finalPhone = (contact_phone || phone || '').trim();
-    const finalEmail = (contact_email || email || '').trim();
+    const finalPhone = (contact_phone || phone || emergency_helpline || '').trim();
+    const finalHelpline = (emergency_helpline || finalPhone || '102').trim();
+    const finalEmail = (contact_email || email || `${(hospital_name || 'hosp').toLowerCase().replace(/[^a-z0-9]/g, '')}@hospital.org`).trim();
 
     const fields = {};
     if (!hospital_name || !hospital_name.trim()) fields.hospital_name = 'Hospital name is required.';
     if (!license_number || !license_number.trim()) fields.license_number = 'License number is required.';
     if (!city || !city.trim()) fields.city = 'City is required.';
-    if (!finalPhone) fields.phone = 'Contact phone is required.';
+    if (!finalPhone) fields.phone = 'Contact phone or emergency helpline is required.';
 
     if (Object.keys(fields).length > 0) {
       return res.status(400).json({
@@ -267,8 +296,8 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN'), async (req, res) =>
       state?.trim() || 'State',
       pincode?.trim() || '110001',
       finalPhone,
-      finalEmail || `${hospital_name.toLowerCase().replace(/[^a-z0-9]/g, '')}@hospital.org`,
-      emergency_helpline?.trim() || finalPhone,
+      finalEmail,
+      finalHelpline,
       established_year ? parseInt(established_year, 10) : 2010,
     ]);
 
@@ -292,8 +321,8 @@ router.post('/', authenticateToken, authorizeRoles('ADMIN'), async (req, res) =>
   }
 });
 
-// Create new ward for hospital (ADMIN, STAFF)
-router.post('/:id/wards', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), async (req, res) => {
+// Create new ward for hospital (ADMIN only)
+router.post('/:id/wards', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
   try {
     const hospitalId = parseInt(req.params.id, 10);
     const { ward_name, ward_type, floor_number, total_beds } = req.body;
@@ -347,14 +376,14 @@ router.post('/:id/wards', authenticateToken, authorizeRoles('ADMIN', 'STAFF'), a
 });
 
 // Add Staff member to hospital (ADMIN only)
-router.post('/:id/staff', authenticateToken, authorizeRoles('ADMIN'), async (req, res) => {
+const addStaffHandler = async (req, res) => {
   const conn = await db.getConnection();
   if (!conn) {
     return res.status(500).json({ success: false, message: 'Database connection pool unavailable.' });
   }
 
   try {
-    const hospitalId = parseInt(req.params.id, 10);
+    const hospitalId = parseInt(req.params.id || req.body.hospital_id, 10);
     const {
       first_name,
       last_name,
@@ -371,6 +400,7 @@ router.post('/:id/staff', authenticateToken, authorizeRoles('ADMIN'), async (req
     } = req.body;
 
     const fields = {};
+    if (!hospitalId || isNaN(hospitalId)) fields.hospital_id = 'Valid Hospital selection is required.';
     if (!first_name) fields.first_name = 'First name is required.';
     if (!last_name) fields.last_name = 'Last name is required.';
     if (!phone) fields.phone = 'Phone number is required.';
@@ -426,6 +456,64 @@ router.post('/:id/staff', authenticateToken, authorizeRoles('ADMIN'), async (req
   } finally {
     conn.release();
   }
-});
+};
+
+router.post('/:id/staff', authenticateToken, authorizeRoles('ADMIN'), addStaffHandler);
+router.post('/staff', authenticateToken, authorizeRoles('ADMIN'), addStaffHandler);
+
+// Remove / Deactivate Staff member (ADMIN only)
+const removeStaffHandler = async (req, res) => {
+  const staffId = parseInt(req.params.staffId || req.params.id, 10);
+  if (!staffId || isNaN(staffId)) {
+    return res.status(400).json({ success: false, message: 'Valid Staff ID is required.' });
+  }
+
+  const conn = await db.getConnection();
+  if (!conn) {
+    return res.status(500).json({ success: false, message: 'Database connection pool unavailable.' });
+  }
+
+  try {
+    await conn.query('START TRANSACTION');
+
+    // 1. Unassign subordinates so recursive self-join foreign key does not break
+    await conn.query('UPDATE Staff SET supervisor_staff_id = NULL WHERE supervisor_staff_id = ?', [staffId]);
+
+    // 2. Unassign attending doctor references in active patients if any
+    await conn.query('UPDATE Patient SET attending_doctor_id = NULL WHERE attending_doctor_id = ?', [staffId]);
+
+    // 3. Attempt physical delete or fallback to soft-delete if historical records exist
+    let deleted = false;
+    try {
+      const [delResult] = await conn.query('DELETE FROM Staff WHERE staff_id = ?', [staffId]);
+      if (delResult.affectedRows > 0) deleted = true;
+    } catch (delErr) {
+      if (delErr.code === 'ER_ROW_IS_REFERENCED_2') {
+        // Staff member has historical clinical records (blood donations, allocations, organ matches)
+        // Safely deactivate them to preserve medical audit trail integrity
+        await conn.query('UPDATE Staff SET is_active = FALSE WHERE staff_id = ?', [staffId]);
+      } else {
+        throw delErr;
+      }
+    }
+
+    await conn.query('COMMIT');
+
+    res.json({
+      success: true,
+      message: deleted
+        ? `Staff member #${staffId} has been successfully removed from the institution.`
+        : `Staff member #${staffId} has historical clinical audit records and was successfully deactivated from active duty.`,
+    });
+  } catch (err) {
+    await conn.query('ROLLBACK');
+    handleMySQLError(err, res, 'Failed to remove staff member.');
+  } finally {
+    conn.release();
+  }
+};
+
+router.delete('/staff/:staffId', authenticateToken, authorizeRoles('ADMIN'), removeStaffHandler);
+router.delete('/:id/staff/:staffId', authenticateToken, authorizeRoles('ADMIN'), removeStaffHandler);
 
 module.exports = router;
